@@ -11,6 +11,4 @@ model/
 *.txt
 *.zip
 
-.*
-!/.gitignore
-!/.gitkeep
+.idea
