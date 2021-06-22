@@ -6,6 +6,7 @@ textures/
 uvs/
 
 *.mp4
+*.pkl
 *.png
 *.pyc
 *.txt
