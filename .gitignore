@@ -3,6 +3,7 @@ __pycache__/
 model/
 
 *.csv
+*.DDS
 *.mp4
 *.obj
 *.pkl
