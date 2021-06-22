@@ -1,5 +1,4 @@
 __pycache__/
-*/__pycache__/
 model/
 
 *.csv
@@ -14,3 +13,4 @@ model/
 
 .*
 !/.gitignore
+!/.gitkeep
