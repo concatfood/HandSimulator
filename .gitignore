@@ -1,5 +1,7 @@
 __pycache__/
 model/
+.idea/
+test
 
 *.csv
 *.DDS
@@ -10,5 +12,3 @@ model/
 *.pyc
 *.txt
 *.zip
-
-.idea
