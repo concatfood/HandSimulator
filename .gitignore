@@ -1,11 +1,10 @@
 __pycache__/
 */__pycache__/
 model/
-objects/
-textures/
-uvs/
 
+*.csv
 *.mp4
+*.obj
 *.pkl
 *.png
 *.pyc
