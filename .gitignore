@@ -1,0 +1,15 @@
+__pycache__/
+*/__pycache__/
+model/
+objects/
+textures/
+uvs/
+
+*.mp4
+*.png
+*.pyc
+*.txt
+*.zip
+
+.*
+!/.gitignore
