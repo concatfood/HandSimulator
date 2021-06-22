@@ -1,7 +1,6 @@
 __pycache__/
 model/
 .idea/
-test
 
 *.csv
 *.DDS
