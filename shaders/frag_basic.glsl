@@ -29,7 +29,7 @@ void main()
 	float light_power = 50.0;
 
 	vec3 material_diffuse_color = texture(texture_sampler, UV).rgb;
-	vec3 material_ambient_color = vec3(0.2, 0.2, 0.2) * material_diffuse_color;
+	vec3 material_ambient_color = vec3(0.2, 0.2, 0.2) * material_diffuse_color;	// set to 0.2 later
 //	vec3 material_specular_color = vec3(0.3, 0.3, 0.3);
 //
 //	float distance = length(LightPosition_worldspace - Position_worldspace);

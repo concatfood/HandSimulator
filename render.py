@@ -4,8 +4,10 @@ import glm
 from glm import *
 from light import get_light_inv_dir
 from light import get_light_pos
-from model.examples.mano import init_mano
-from model.examples.mano import mano
+from manolayer.mano_ import init_mano
+from manolayer.mano_ import mano
+# from model.examples.mano import init_mano
+# from model.examples.mano import mano
 import numpy as np
 from OpenGL.GL import *
 import pickle
@@ -75,12 +77,15 @@ def buffer_data_background(background):
 
     background.vertex_buffer = GLuint(glGenBuffers(1))
     glBindBuffer(GL_ARRAY_BUFFER, background.vertex_buffer)
-    glBufferData(GL_ARRAY_BUFFER, np.array([element for vertex in background.vertices for element in vertex],
-                                           dtype=GLfloat), GL_STATIC_DRAW)
+    # glBufferData(GL_ARRAY_BUFFER, np.array([element for vertex in background.vertices for element in vertex],
+    #                                        dtype=GLfloat), GL_STATIC_DRAW)
+    glBufferData(GL_ARRAY_BUFFER, np.array(background.vertices, dtype=GLfloat), GL_STATIC_DRAW)
 
     background.uv_buffer = GLuint(glGenBuffers(1))
     glBindBuffer(GL_ARRAY_BUFFER, background.uv_buffer)
-    glBufferData(GL_ARRAY_BUFFER, np.array([element for uv in background.uvs for element in uv], dtype=GLfloat),
+    # glBufferData(GL_ARRAY_BUFFER, np.array([element for uv in background.uvs for element in uv], dtype=GLfloat),
+    #              GL_STATIC_DRAW)
+    glBufferData(GL_ARRAY_BUFFER, np.array(background.uvs, dtype=GLfloat),
                  GL_STATIC_DRAW)
 
     background.element_buffer = GLuint(glGenBuffers(1))
@@ -109,22 +114,27 @@ def buffer_data_hand(hand):
         hand.vertex_buffer = GLuint(glGenBuffers(1))
 
     glBindBuffer(GL_ARRAY_BUFFER, hand.vertex_buffer)
-    glBufferData(GL_ARRAY_BUFFER, np.array([element for vertex in hand.vertices for element in vertex],
-                                           dtype=GLfloat), buffer_data_usage)
+    # glBufferData(GL_ARRAY_BUFFER, np.array([element for vertex in hand.vertices for element in vertex],
+    #                                        dtype=GLfloat), buffer_data_usage)
+    # glBufferData(GL_ARRAY_BUFFER, np.array([element for vertex in hand.vertices for element in vertex.cpu().numpy()],
+    #                                        dtype=GLfloat), buffer_data_usage)
+    glBufferData(GL_ARRAY_BUFFER, hand.vertices.astype(GLfloat), buffer_data_usage)
 
     if hand.uv_buffer is None:
         hand.uv_buffer = GLuint(glGenBuffers(1))
 
     glBindBuffer(GL_ARRAY_BUFFER, hand.uv_buffer)
-    glBufferData(GL_ARRAY_BUFFER, np.array([element for uv in hand.uvs for element in uv], dtype=GLfloat),
-                 buffer_data_usage)
+    glBufferData(GL_ARRAY_BUFFER, np.array(hand.uvs, dtype=GLfloat), buffer_data_usage)
 
     if hand.normal_buffer is None:
         hand.normal_buffer = GLuint(glGenBuffers(1))
 
     glBindBuffer(GL_ARRAY_BUFFER, hand.normal_buffer)
-    glBufferData(GL_ARRAY_BUFFER, np.array([element for normal in hand.normals for element in normal],
-                                           dtype=GLfloat), buffer_data_usage)
+    # glBufferData(GL_ARRAY_BUFFER, np.array([element for normal in hand.normals for element in normal],
+    #                                        dtype=GLfloat), buffer_data_usage)
+    # glBufferData(GL_ARRAY_BUFFER, np.array([element for normal in hand.normals for element in normal.cpu().numpy()],
+    #                                        dtype=GLfloat), buffer_data_usage)
+    glBufferData(GL_ARRAY_BUFFER, hand.normals.astype(GLfloat), buffer_data_usage)
 
     if USE_VBO_INDEXING:
         if hand.element_buffer is None:
@@ -443,8 +453,10 @@ def loop(window, frame_buffers, background, hands, depth_texture):
     # used for initializing a camera position
     mano_hands_0 = mano(0)
     hands_avg = np.zeros(3)
-    hand_0 = mano_hands_0[0][0]
-    hand_1 = mano_hands_0[1][0]
+    hand_0 = mano_hands_0[0][0].cpu().numpy()
+    hand_1 = mano_hands_0[1][0].cpu().numpy()
+    # hand_0 = mano_hands_0[0][0]
+    # hand_1 = mano_hands_0[1][0]
     hands_avg += np.mean(hand_0, axis=0)
     hands_avg += np.mean(hand_1, axis=0)
     hands_avg /= 2
@@ -519,11 +531,13 @@ def loop(window, frame_buffers, background, hands, depth_texture):
         # 2. draw hands
         for i, hand in enumerate(hands):
             hand.faces = mano_hands[i][1]
-            hand.faces = np.concatenate((hand.faces, np.array(hand.faces_hole)))
+            # hand.faces = np.concatenate((hand.faces, np.array(hand.faces_hole)))
+            hand.faces = np.concatenate((hand.faces.cpu().numpy(), np.array(hand.faces_hole)))
             hand.vertices_raw = mano_hands[i][0]
+            hand.normals = mano_hands[i][2]
 
             hand.compute_vertices()
-            hand.compute_normals()
+            # hand.compute_normals()
             buffer_data_hand(hand)
 
             glBindFramebuffer(GL_FRAMEBUFFER, frame_buffers[0])
@@ -614,23 +628,23 @@ def loop(window, frame_buffers, background, hands, depth_texture):
             image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
             image.save(('frames/rgb/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
 
-            glReadBuffer(GL_COLOR_ATTACHMENT1)
-
-            data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-            image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-            image.save(('frames/segmentation/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
-
-            glReadBuffer(GL_COLOR_ATTACHMENT2)
-
-            data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-            image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-            image.save(('frames/depth/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
-
-            glReadBuffer(GL_COLOR_ATTACHMENT3)
-
-            data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-            image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-            image.save(('frames/normal/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+            # glReadBuffer(GL_COLOR_ATTACHMENT1)
+            #
+            # data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
+            # image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
+            # image.save(('frames/segmentation/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+            #
+            # glReadBuffer(GL_COLOR_ATTACHMENT2)
+            #
+            # data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
+            # image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
+            # image.save(('frames/depth/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+            #
+            # glReadBuffer(GL_COLOR_ATTACHMENT3)
+            #
+            # data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
+            # image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
+            # image.save(('frames/normal/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
 
         glfw.swap_buffers(window)
         glfw.poll_events()

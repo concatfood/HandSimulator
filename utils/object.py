@@ -1,5 +1,7 @@
 import glm
 
+import numpy as np
+
 
 # generic object
 class Object:
@@ -54,14 +56,38 @@ class Object:
 
     # compute vertices the order needed for OpenGL
     def compute_vertices(self):
-        self.vertices = []
+        # self.vertices = []
+        #
+        # for face in self.faces:
+        #     self.vertices.append(self.vertices_raw[face[0]])
+        #     self.vertices.append(self.vertices_raw[face[1]])
+        #     self.vertices.append(self.vertices_raw[face[2]])
+        #
+        # for face in self.faces_hole:
+        #     self.vertices.append(self.vertices_raw[face[0]])
+        #     self.vertices.append(self.vertices_raw[face[1]])
+        #     self.vertices.append(self.vertices_raw[face[2]])
 
-        for face in self.faces:
-            self.vertices.append(self.vertices_raw[face[0]])
-            self.vertices.append(self.vertices_raw[face[1]])
-            self.vertices.append(self.vertices_raw[face[2]])
+        vertices_raw_np = self.vertices_raw.cpu().numpy()
+        self.vertices = np.zeros((3 * (self.faces.shape[0] + len(self.faces_hole)), self.faces.shape[1]))
 
-        for face in self.faces_hole:
-            self.vertices.append(self.vertices_raw[face[0]])
-            self.vertices.append(self.vertices_raw[face[1]])
-            self.vertices.append(self.vertices_raw[face[2]])
+        for f, face in enumerate(self.faces):
+            self.vertices[3 * f: 3 * (f + 1), :] = vertices_raw_np[face]
+
+        for f, face in enumerate(self.faces_hole):
+            self.vertices[self.faces.shape[0] + 3 * f, :] = vertices_raw_np[face[0]]
+            self.vertices[self.faces.shape[0] + 3 * f + 1, :] = vertices_raw_np[face[1]]
+            self.vertices[self.faces.shape[0] + 3 * f + 2, :] = vertices_raw_np[face[2]]
+
+        normals_raw_np = self.normals.cpu().numpy()
+        normals = np.zeros((3 * (self.faces.shape[0] + len(self.faces_hole)), self.faces.shape[1]))
+
+        for f, face in enumerate(self.faces):
+            normals[3 * f: 3 * (f + 1), :] = normals_raw_np[face]
+
+        for f, face in enumerate(self.faces_hole):
+            normals[self.faces.shape[0] + 3 * f, :] = normals_raw_np[face[0]]
+            normals[self.faces.shape[0] + 3 * f + 1, :] = normals_raw_np[face[1]]
+            normals[self.faces.shape[0] + 3 * f + 2, :] = normals_raw_np[face[2]]
+
+        self.normals = normals
