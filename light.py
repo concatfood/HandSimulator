@@ -27,10 +27,7 @@ def sample_from_unit_sphere():
 
 
 def get_light_inv_dir(scene):
-    if scene == 'forest':
-        return glm.vec3(0.5, 0.1, 0.0)
-        # return glm.vec3(0.5, 0.0, 0.0)
-    elif scene == 'random':
+    if scene == 'random':
         global x
         global y
         global z
@@ -42,9 +39,7 @@ def get_light_inv_dir(scene):
 
 
 def get_light_pos(scene, pos):
-    if scene == 'forest':
-        return pos + glm.vec3(0.0, 1.0, 0.0)
-    elif scene == 'random':
+    if scene == 'random':
         global x
         global y
         global z

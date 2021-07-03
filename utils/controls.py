@@ -1,13 +1,14 @@
 import glfw
 import glm
 from glm import *
+import settings
 
 horizontal_angle = pi()
-initial_fov = 45.0
+initial_fov = settings.fov
 fov_current = initial_fov
 last_time = None
 mouse_speed = 0.0005
-position = glm.vec3(1.07374847, -0.24665557,  1.46311718)   # position = glm.vec3(0.0, 0.0, 0.5)
+position = glm.vec3(0.0, 0.0, 0.5)
 speed = 1.0
 vertical_angle = 0.0
 

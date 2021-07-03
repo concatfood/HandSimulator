@@ -1,11 +1,9 @@
-__pycache__/
-manolayer/
-model/
-.idea/
+.idea
 
 *.csv
 *.DDS
 *.mp4
+*.npy
 *.obj
 *.pkl
 *.png

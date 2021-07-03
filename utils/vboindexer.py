@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 
 # approximates equality constraint
@@ -40,7 +41,7 @@ def index_vbo_slow(in_vertices, in_uvs, in_normals):
             out_normals.append(in_normals[i])
             out_indices.append(len(out_vertices) - 1)
 
-    return out_indices, out_vertices, out_uvs, out_normals
+    return np.array(out_indices), np.array(out_vertices), np.array(out_uvs), np.array(out_normals)
 
 
 # auxiliary data type
@@ -78,7 +79,7 @@ def index_vbo(in_vertices, in_uvs, in_normals):
             out_indices.append(new_index)
             vertex_to_out_index[packed] = new_index
 
-    return out_indices, out_vertices, out_uvs, out_normals
+    return np.array(out_indices), np.array(out_vertices), np.array(out_uvs), np.array(out_normals)
 
 
 # VBO indexing in O(n²) including tangent, bitangents and normals
@@ -106,4 +107,4 @@ def index_vbo_tbn(in_vertices, in_uvs, in_normals, in_tangents, in_bi_tangents):
             out_bi_tangents.append(in_bi_tangents[i])
             out_indices.append(len(out_vertices) - 1)
 
-    return out_indices, out_vertices, out_uvs, out_normals
+    return np.array(out_indices), np.array(out_vertices), np.array(out_uvs), np.array(out_normals)

@@ -1,15 +1,11 @@
-import csv
 import glfw
 import glm
 from glm import *
 from light import get_light_inv_dir
 from light import get_light_pos
-from manolayer.mano_ import init_mano
-from manolayer.mano_ import mano
-# from model.examples.mano import init_mano
-# from model.examples.mano import mano
+from twohands import init_mano
+from twohands import get_mano_hands
 import numpy as np
-from OpenGL.GL import *
 import pickle
 from PIL import Image
 from PIL import ImageOps
@@ -18,11 +14,9 @@ from settings import *
 import time
 from utils.controls import compute_matrices_from_inputs
 from utils.objloader import load_hole
-from utils.objloader import load_obj
 from utils.object import Object
 from utils.shader import load_shaders
 from utils.texture import load_texture
-from utils.vboindexer import index_vbo
 
 
 # contains OpenGL IDs for the background
@@ -77,20 +71,15 @@ def buffer_data_background(background):
 
     background.vertex_buffer = GLuint(glGenBuffers(1))
     glBindBuffer(GL_ARRAY_BUFFER, background.vertex_buffer)
-    # glBufferData(GL_ARRAY_BUFFER, np.array([element for vertex in background.vertices for element in vertex],
-    #                                        dtype=GLfloat), GL_STATIC_DRAW)
-    glBufferData(GL_ARRAY_BUFFER, np.array(background.vertices, dtype=GLfloat), GL_STATIC_DRAW)
+    glBufferData(GL_ARRAY_BUFFER, background.vertices.astype(GLfloat), GL_STATIC_DRAW)
 
     background.uv_buffer = GLuint(glGenBuffers(1))
     glBindBuffer(GL_ARRAY_BUFFER, background.uv_buffer)
-    # glBufferData(GL_ARRAY_BUFFER, np.array([element for uv in background.uvs for element in uv], dtype=GLfloat),
-    #              GL_STATIC_DRAW)
-    glBufferData(GL_ARRAY_BUFFER, np.array(background.uvs, dtype=GLfloat),
-                 GL_STATIC_DRAW)
+    glBufferData(GL_ARRAY_BUFFER, background.uvs.astype(GLfloat), GL_STATIC_DRAW)
 
     background.element_buffer = GLuint(glGenBuffers(1))
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, background.element_buffer)
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, np.array(background.indices, dtype=GLushort), GL_STATIC_DRAW)
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, background.indices.astype(GLushort), GL_STATIC_DRAW)
 
     glEnableVertexAttribArray(0)
     glBindBuffer(GL_ARRAY_BUFFER, background.vertex_buffer)
@@ -114,26 +103,18 @@ def buffer_data_hand(hand):
         hand.vertex_buffer = GLuint(glGenBuffers(1))
 
     glBindBuffer(GL_ARRAY_BUFFER, hand.vertex_buffer)
-    # glBufferData(GL_ARRAY_BUFFER, np.array([element for vertex in hand.vertices for element in vertex],
-    #                                        dtype=GLfloat), buffer_data_usage)
-    # glBufferData(GL_ARRAY_BUFFER, np.array([element for vertex in hand.vertices for element in vertex.cpu().numpy()],
-    #                                        dtype=GLfloat), buffer_data_usage)
     glBufferData(GL_ARRAY_BUFFER, hand.vertices.astype(GLfloat), buffer_data_usage)
 
     if hand.uv_buffer is None:
         hand.uv_buffer = GLuint(glGenBuffers(1))
 
     glBindBuffer(GL_ARRAY_BUFFER, hand.uv_buffer)
-    glBufferData(GL_ARRAY_BUFFER, np.array(hand.uvs, dtype=GLfloat), buffer_data_usage)
+    glBufferData(GL_ARRAY_BUFFER, hand.uvs.astype(GLfloat), buffer_data_usage)
 
     if hand.normal_buffer is None:
         hand.normal_buffer = GLuint(glGenBuffers(1))
 
     glBindBuffer(GL_ARRAY_BUFFER, hand.normal_buffer)
-    # glBufferData(GL_ARRAY_BUFFER, np.array([element for normal in hand.normals for element in normal],
-    #                                        dtype=GLfloat), buffer_data_usage)
-    # glBufferData(GL_ARRAY_BUFFER, np.array([element for normal in hand.normals for element in normal.cpu().numpy()],
-    #                                        dtype=GLfloat), buffer_data_usage)
     glBufferData(GL_ARRAY_BUFFER, hand.normals.astype(GLfloat), buffer_data_usage)
 
     if USE_VBO_INDEXING:
@@ -141,7 +122,7 @@ def buffer_data_hand(hand):
             hand.element_buffer = GLuint(glGenBuffers(1))
 
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, hand.element_buffer)
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, np.array(hand.indices, dtype=GLushort), buffer_data_usage)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, hand.indices.astype(GLushort), buffer_data_usage)
 
     glEnableVertexAttribArray(0)
     glBindBuffer(GL_ARRAY_BUFFER, hand.vertex_buffer)
@@ -268,15 +249,15 @@ def init_scene():
 # loads a specified background image
 def load_background(path_texture):
     # stretch image to canvas
-    vertices = [(-1.0, -1.0, 0.0),
-                (1.0, -1.0, 0.0),
-                (-1.0,  1.0, 0.0),
-                (1.0,  1.0, 0.0)]
-    uvs = [(0.0, 0.0),
-           (1.0, 0.0),
-           (0.0, 1.0),
-           (1.0, 1.0)]
-    indices = [0, 1, 2, 2, 1, 3]
+    vertices = np.array([[-1.0, -1.0, 0.0],
+                         [1.0, -1.0, 0.0],
+                         [-1.0,  1.0, 0.0],
+                         [1.0,  1.0, 0.0]])
+    uvs = np.array([[0.0, 0.0],
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                    [1.0, 1.0]])
+    indices = np.array([0, 1, 2, 2, 1, 3])
 
     background = Background()
     background.vertices = vertices
@@ -301,35 +282,25 @@ def load_hands():
     right_hand.matrix_id = glGetUniformLocation(Scene.program_id, 'MVP')
     right_hand.model_matrix_id = glGetUniformLocation(Scene.program_id, 'M')
     right_hand.texture_sampler_id = glGetUniformLocation(Scene.program_id, 'texture_sampler')
-    right_hand.faces_hole = load_hole('objects/right_hole.obj')
+    right_hand.faces_hole = load_hole('hands/right_hole.obj')
 
-    with open('uvs/uvs_right.pkl', 'rb') as f:
+    with open('hands/uvs_right.pkl', 'rb') as f:
         pickle_uvs_right = pickle.load(f, encoding='latin')
 
     faces_uv_right = pickle_uvs_right['faces_uvs']
     verts_uv_right = pickle_uvs_right['verts_uvs']
 
-    uvs_right = []
-
-    for face in faces_uv_right:
-        uvs_right.append(glm.vec2(verts_uv_right[face[0]][0], verts_uv_right[face[0]][1]))
-        uvs_right.append(glm.vec2(verts_uv_right[face[1]][0], verts_uv_right[face[1]][1]))
-        uvs_right.append(glm.vec2(verts_uv_right[face[2]][0], verts_uv_right[face[2]][1]))
-
-    for face in right_hand.faces_hole:
-        uvs_right.append(glm.vec2(0.5, 0.5))
+    uvs_right = verts_uv_right[faces_uv_right.reshape(-1)]
+    np.concatenate((uvs_right, 0.5 * np.ones((right_hand.faces_hole.shape[0], 2))))
 
     right_hand.uvs = uvs_right
 
-    faces_vertices_right = []
-
-    with open('objects/faces_vertices_right.csv') as csv_file:
-        csv_reader = csv.reader(csv_file, delimiter=',')
-
-        for row in csv_reader:
-            faces_vertices_right.append([int(element) for element in row])
+    faces_vertices_right = np.load('hands/faces_vertices_right.npy')
 
     right_hand.faces_vertices = faces_vertices_right
+
+    with open('hands/weights_faces_right.npy', 'rb') as f:
+        right_hand.weights_faces = np.load(f)
 
     left_hand = Hand()
     left_hand.texture_id = texture_id
@@ -337,52 +308,41 @@ def load_hands():
     left_hand.matrix_id = glGetUniformLocation(Scene.program_id, 'MVP')
     left_hand.model_matrix_id = glGetUniformLocation(Scene.program_id, 'M')
     left_hand.texture_sampler_id = glGetUniformLocation(Scene.program_id, 'texture_sampler')
-    left_hand.faces_hole = load_hole('objects/left_hole.obj')
+    left_hand.faces_hole = load_hole('hands/left_hole.obj')
 
-    with open('uvs/uvs_left.pkl', 'rb') as f:
+    with open('hands/uvs_left.pkl', 'rb') as f:
         pickle_uvs_left = pickle.load(f, encoding='latin')
 
     faces_uv_left = pickle_uvs_left['faces_uvs']
     verts_uv_left = pickle_uvs_left['verts_uvs']
 
-    uvs_left = []
-
-    for face in faces_uv_left:
-        uvs_left.append(glm.vec2(verts_uv_left[face[0]][0], verts_uv_left[face[0]][1]))
-        uvs_left.append(glm.vec2(verts_uv_left[face[1]][0], verts_uv_left[face[1]][1]))
-        uvs_left.append(glm.vec2(verts_uv_left[face[2]][0], verts_uv_left[face[2]][1]))
-
-    for face in left_hand.faces_hole:
-        uvs_left.append(glm.vec2(0.5, 0.5))
+    uvs_left = verts_uv_left[faces_uv_left.reshape(-1)]
+    np.concatenate((uvs_left, 0.5 * np.ones((left_hand.faces_hole.shape[0], 2))))
 
     left_hand.uvs = uvs_left
 
-    faces_vertices_left = []
-
-    with open('objects/faces_vertices_left.csv') as csv_file:
-        csv_reader = csv.reader(csv_file, delimiter=',')
-
-        for row in csv_reader:
-            faces_vertices_left.append([int(element) for element in row])
+    faces_vertices_left = np.load('hands/faces_vertices_left.npy')
 
     left_hand.faces_vertices = faces_vertices_left
+
+    with open('hands/weights_faces_left.npy', 'rb') as f:
+        left_hand.weights_faces = np.load(f)
 
     return [right_hand, left_hand]
 
 
 # generates a random (currently fixed) chessboard as a background
 def load_random_chessboard():
-    vertices = [(-1.0, -1.0, 0.0),
-                (1.0, -1.0, 0.0),
-                (-1.0,  1.0, 0.0),
-                (1.0,  1.0, 0.0)]
-
-    uvs = [(0.0, 0.0),
-           (1.0, 0.0),
-           (0.0, 1.0),
-           (1.0, 1.0)]
-
-    indices = [0, 1, 2, 2, 1, 3]
+    # stretch image to canvas
+    vertices = np.array([[-1.0, -1.0, 0.0],
+                         [1.0, -1.0, 0.0],
+                         [-1.0,  1.0, 0.0],
+                         [1.0,  1.0, 0.0]])
+    uvs = np.array([[0.0, 0.0],
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                    [1.0, 1.0]])
+    indices = np.array([0, 1, 2, 2, 1, 3])
 
     background = Background()
     background.vertices = vertices
@@ -451,12 +411,10 @@ def loop(window, frame_buffers, background, hands, depth_texture):
     nb_frames = 0
 
     # used for initializing a camera position
-    mano_hands_0 = mano(0)
+    mano_hands = get_mano_hands(0)
     hands_avg = np.zeros(3)
-    hand_0 = mano_hands_0[0][0].cpu().numpy()
-    hand_1 = mano_hands_0[1][0].cpu().numpy()
-    # hand_0 = mano_hands_0[0][0]
-    # hand_1 = mano_hands_0[1][0]
+    hand_0 = mano_hands[0][0]
+    hand_1 = mano_hands[1][0]
     hands_avg += np.mean(hand_0, axis=0)
     hands_avg += np.mean(hand_1, axis=0)
     hands_avg /= 2
@@ -526,18 +484,16 @@ def loop(window, frame_buffers, background, hands, depth_texture):
             glUniformMatrix4fv(Scene.depth_matrix_id, 1, GL_FALSE, value_ptr(depth_mvp))
 
         # load two MANO hands
-        mano_hands = mano(f)
+        mano_hands = get_mano_hands(f)
 
         # 2. draw hands
         for i, hand in enumerate(hands):
             hand.faces = mano_hands[i][1]
-            # hand.faces = np.concatenate((hand.faces, np.array(hand.faces_hole)))
-            hand.faces = np.concatenate((hand.faces.cpu().numpy(), np.array(hand.faces_hole)))
+            hand.faces = np.concatenate((hand.faces, hand.faces_hole))
             hand.vertices_raw = mano_hands[i][0]
-            hand.normals = mano_hands[i][2]
 
             hand.compute_vertices()
-            # hand.compute_normals()
+            hand.compute_normals()
             buffer_data_hand(hand)
 
             glBindFramebuffer(GL_FRAMEBUFFER, frame_buffers[0])
@@ -582,7 +538,7 @@ def loop(window, frame_buffers, background, hands, depth_texture):
 
             if SHADING == 'basic':
                 # light_pos = get_light_pos('random', glm.vec3(hands_avg))
-                light_pos = glm.vec3(hands_avg) + glm.vec3(0.5 * far, 0, 1)    # for now
+                light_pos = glm.vec3(hands_avg) + glm.vec3(0.5 * far, 0, 1)
                 glUniform3f(Scene.light_id, light_pos.x, light_pos.y, light_pos.z)
 
             if SHADING == 'shadow_mapping':
@@ -628,23 +584,23 @@ def loop(window, frame_buffers, background, hands, depth_texture):
             image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
             image.save(('frames/rgb/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
 
-            # glReadBuffer(GL_COLOR_ATTACHMENT1)
-            #
-            # data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-            # image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-            # image.save(('frames/segmentation/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
-            #
-            # glReadBuffer(GL_COLOR_ATTACHMENT2)
-            #
-            # data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-            # image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-            # image.save(('frames/depth/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
-            #
-            # glReadBuffer(GL_COLOR_ATTACHMENT3)
-            #
-            # data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-            # image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-            # image.save(('frames/normal/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+            glReadBuffer(GL_COLOR_ATTACHMENT1)
+
+            data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
+            image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
+            image.save(('frames/segmentation/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+
+            glReadBuffer(GL_COLOR_ATTACHMENT2)
+
+            data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
+            image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
+            image.save(('frames/depth/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+
+            glReadBuffer(GL_COLOR_ATTACHMENT3)
+
+            data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
+            image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
+            image.save(('frames/normal/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
 
         glfw.swap_buffers(window)
         glfw.poll_events()
@@ -736,10 +692,9 @@ def render():
         return
 
     init_opengl()
-    init_mano('model/examples/1000fps/raw_sequence0.pkl')
+    init_mano('sequences/1000fps/raw_sequence0.pkl')
     init_scene()
 
-    # background = load_background('forest.png')
     background = load_random_chessboard()
     hands = load_hands()
 
