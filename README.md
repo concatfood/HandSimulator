@@ -19,6 +19,5 @@ Requirements include but are not limited to:
 
 ### Rendering
 To render a sequence make sure the following components are set up as required:
-* SMPLX is placed in model/ and the required mano.py as well as the MANO frame sequences are placed in model/examples
-* objects/, textures/ uvs/ contain the required files
+* hands and textures contain the required files (please message me about them if you want to run the code)
 * your desired render settings are specified in settings.py

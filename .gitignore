@@ -1,7 +1,6 @@
 .idea
 
 *.csv
-*.DDS
 *.mp4
 *.npy
 *.obj
