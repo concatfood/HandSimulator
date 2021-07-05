@@ -1,7 +1,8 @@
-import math
 import numpy as np
 import pickle
+from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation as R
+from scipy.spatial.transform import Slerp
 import smplx
 import torch
 
@@ -41,81 +42,97 @@ def init_mano(file_name):
                                        flat_hand_mean=True)}
 
 
-# interpolate to desired frame rate (currently linear)
-def interpolate_sequence(fps, fps_target):
+# interpolate to desired frame rate
+def interpolate_sequence(fps_input, fps_output):
     global seq_dict
 
-    num_frames = int(round(len(seq_dict) * fps_target / fps))
-    step = (fps - 1) / (fps_target - 1)
-    seq_dict_new = {0: seq_dict[0]}
+    length_in = len(seq_dict)
+    x_in = np.linspace(0, length_in, num=length_in, endpoint=False)
 
-    for f in range(1, num_frames):
-        print(f)
-        seq_dict_new[f] = [{}, {}]
+    poses_right_in = np.zeros((length_in, 48))
+    shapes_right_in = np.zeros((length_in, 10))
+    trans_right_in = np.zeros((length_in, 3))
+    poses_left_in = np.zeros((length_in, 48))
+    shapes_left_in = np.zeros((length_in, 10))
+    trans_left_in = np.zeros((length_in, 3))
 
-        before = int(math.floor(f * step))
-        after = int(math.ceil(f * step))
-        factor_after = f * step - before
-        factor_before = 1 - factor_after
+    for f in seq_dict.keys():
+        right_hand = seq_dict[f][0]
+        left_hand = seq_dict[f][1]
 
-        pose_0_before = seq_dict[before][0]['pose']
-        pose_0_after = seq_dict[after][0]['pose']
+        poses_right_in[f, :] = right_hand['pose']
+        poses_left_in[f, :] = left_hand['pose']
+        shapes_right_in[f, :] = right_hand['shape']
+        shapes_left_in[f, :] = left_hand['shape']
+        trans_right_in[f, :] = right_hand['trans']
+        trans_left_in[f, :] = left_hand['trans']
 
-        shape_0_before = seq_dict[before][0]['shape']
-        shape_0_after = seq_dict[after][0]['shape']
+    slerp_poses_right = []
+    slerp_poses_left = []
+    interps_shapes_right = []
+    interps_trans_right = []
+    interps_shapes_left = []
+    interps_trans_left = []
 
-        trans_0_before = seq_dict[before][0]['trans']
-        trans_0_after = seq_dict[after][0]['trans']
+    for i in range(16):
+        y_right = R.from_rotvec(poses_right_in[:, 3 * i: 3 * (i + 1)])
+        y_left = R.from_rotvec(poses_left_in[:, 3 * i: 3 * (i + 1)])
+        slerp_poses_right.append(Slerp(x_in, y_right))
+        slerp_poses_left.append(Slerp(x_in, y_left))
 
-        hand_type_0 = seq_dict[before][0]['hand_type']
+    for i in range(shapes_right_in.shape[1]):
+        y_right = shapes_right_in[:, i]
+        y_left = shapes_left_in[:, i]
+        interps_shapes_right.append(interp1d(x_in, y_right, kind='cubic'))
+        interps_shapes_left.append(interp1d(x_in, y_left, kind='cubic'))
 
-        pose_1_before = seq_dict[before][1]['pose']
-        pose_1_after = seq_dict[after][1]['pose']
+    for i in range(trans_right_in.shape[1]):
+        y_right = trans_right_in[:, i]
+        y_left = trans_left_in[:, i]
+        interps_trans_right.append(interp1d(x_in, y_right, kind='cubic'))
+        interps_trans_left.append(interp1d(x_in, y_left, kind='cubic'))
 
-        shape_1_before = seq_dict[before][1]['shape']
-        shape_1_after = seq_dict[after][1]['shape']
+    rate = fps_output / fps_input
+    length_out = int(round(x_in.shape[0] * rate))
+    x_out = np.linspace(0, np.max(x_in), num=length_out, endpoint=True)
 
-        trans_1_before = seq_dict[before][1]['trans']
-        trans_1_after = seq_dict[after][1]['trans']
+    poses_right_out = np.zeros((length_out, 48))
+    shapes_right_out = np.zeros((length_out, 10))
+    trans_right_out = np.zeros((length_out, 3))
+    poses_left_out = np.zeros((length_out, 48))
+    shapes_left_out = np.zeros((length_out, 10))
+    trans_left_out = np.zeros((length_out, 3))
 
-        hand_type_1 = seq_dict[before][1]['hand_type']
+    for s, slerp in enumerate(slerp_poses_right):
+        poses_right_out[:, 3 * s: 3 * (s + 1)] = slerp(x_out).as_rotvec()
 
-        pose_0_new = np.zeros(48)
+    for s, slerp in enumerate(slerp_poses_left):
+        poses_left_out[:, 3 * s: 3 * (s + 1)] = slerp(x_out).as_rotvec()
 
-        for i in range(16):
-            r_before = R.from_rotvec(pose_0_before[3 * i:3 * (i + 1)])
-            r_after = R.from_rotvec(pose_0_after[3 * i:3 * (i + 1)])
-            q_before = r_before.as_quat()
-            q_after = r_after.as_quat()
-            q_interpolated = factor_before * q_before + factor_after * q_after
-            rotvec_interpolated = R.from_quat(q_interpolated).as_rotvec()
-            pose_0_new[3 * i:3 * (i + 1)] = rotvec_interpolated
+    for i, interp in enumerate(interps_shapes_right):
+        shapes_right_out[:, i] = interp(x_out)
 
-        seq_dict_new[f][0]['pose'] = pose_0_new
-        seq_dict_new[f][0]['shape'] = factor_before * shape_0_before + factor_after * shape_0_after
-        seq_dict_new[f][0]['trans'] = factor_before * trans_0_before + factor_after * trans_0_after
-        seq_dict_new[f][0]['hand_type'] = hand_type_0
+    for i, interp in enumerate(interps_shapes_left):
+        shapes_left_out[:, i] = interp(x_out)
 
-        pose_1_new = np.zeros(48)
+    for i, interp in enumerate(interps_trans_right):
+        trans_right_out[:, i] = interp(x_out)
 
-        for i in range(16):
-            r_before = R.from_rotvec(pose_1_before[3 * i:3 * (i + 1)])
-            r_after = R.from_rotvec(pose_1_after[3 * i:3 * (i + 1)])
-            q_before = r_before.as_quat()
-            q_after = r_after.as_quat()
-            q_interpolated = factor_before * q_before + factor_after * q_after
-            rotvec_interpolated = R.from_quat(q_interpolated).as_rotvec()
-            pose_1_new[3 * i:3 * (i + 1)] = rotvec_interpolated
+    for i, interp in enumerate(interps_trans_left):
+        trans_left_out[:, i] = interp(x_out)
 
-        seq_dict_new[f][1]['pose'] = pose_1_new
-        seq_dict_new[f][1]['shape'] = factor_before * shape_1_before + factor_after * shape_1_after
-        seq_dict_new[f][1]['trans'] = factor_before * trans_1_before + factor_after * trans_1_after
-        seq_dict_new[f][1]['hand_type'] = hand_type_1
+    seq_dict_out = {}
 
-    seq_dict = seq_dict_new
+    for f in range(length_out):
+        seq_dict_out[f] = [{'pose': poses_right_out[f, :], 'shape': shapes_right_out[f, :], 'trans': trans_right_out[f, :],
+                            'hand_type': 'right'},
+                           {'pose': poses_left_out[f, :], 'shape': shapes_left_out[f, :], 'trans': trans_left_out[f, :],
+                            'hand_type': 'left'}]
+
+    seq_dict = seq_dict_out
 
     # save to a file for later
-    with open('sequences/raw_sequence_1000fps.pkl', 'wb') as f:
+    with open('sequences/1000fps/raw_sequence0.pkl', 'wb') as f:
         pickle.dump(seq_dict, f)
 
 
@@ -135,3 +152,45 @@ def get_mano_hands(frame):
         mano_hands.append((vertices, faces, mano_joints))
 
     return mano_hands
+
+
+# removes tracking error caused by the gloves
+# an error is defined by the continuation of two consecutive frames with the same tracking values
+# this step is not used anymore
+def remove_tracking_errors(threshold=1e-9):
+    global seq_dict
+
+    length_in = len(seq_dict)
+    x_in = np.linspace(0, length_in, num=length_in, endpoint=False)
+
+    poses_right_in = np.zeros((length_in, 48))
+    shapes_right_in = np.zeros((length_in, 10))
+    trans_right_in = np.zeros((length_in, 3))
+    poses_left_in = np.zeros((length_in, 48))
+    shapes_left_in = np.zeros((length_in, 10))
+    trans_left_in = np.zeros((length_in, 3))
+
+    to_remove = []
+
+    for t in range(0, length_in - 1):
+        params_right = np.concatenate((poses_right_in[t:t + 2, :], shapes_right_in[t:t + 2, :],
+                                       trans_right_in[t:t + 2, :]), axis=1)
+        params_left = np.concatenate((poses_left_in[t:t + 2, :], shapes_left_in[t:t + 2, :],
+                                      trans_left_in[t:t + 2, :]), axis=1)
+
+        diff_right = params_right[1, :] - params_right[0, :]
+        diff_left = params_left[1, :] - params_left[0, :]
+
+        if abs(np.mean(diff_right)) < threshold or abs(np.mean(diff_left)) < threshold:
+            to_remove.append(t)
+            to_remove.append(t + 1)
+
+    x_in = np.delete(x_in, to_remove)
+    poses_right_in = np.delete(poses_right_in, to_remove, axis=0)
+    shapes_right_in = np.delete(shapes_right_in, to_remove, axis=0)
+    trans_right_in = np.delete(trans_right_in, to_remove, axis=0)
+    poses_left_in = np.delete(poses_left_in, to_remove, axis=0)
+    shapes_left_in = np.delete(shapes_left_in, to_remove, axis=0)
+    trans_left_in = np.delete(trans_left_in, to_remove, axis=0)
+
+    # ...

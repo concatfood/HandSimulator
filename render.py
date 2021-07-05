@@ -3,8 +3,6 @@ import glm
 from glm import *
 from light import get_light_inv_dir
 from light import get_light_pos
-from twohands import init_mano
-from twohands import get_mano_hands
 import numpy as np
 import pickle
 from PIL import Image
@@ -12,6 +10,9 @@ from PIL import ImageOps
 from random import random
 from settings import *
 import time
+from twohands import init_mano
+from twohands import interpolate_sequence
+from twohands import get_mano_hands
 from utils.controls import compute_matrices_from_inputs
 from utils.objloader import load_hole
 from utils.object import Object
@@ -693,6 +694,8 @@ def render():
 
     init_opengl()
     init_mano('sequences/1000fps/raw_sequence0.pkl')
+    # interpolate_sequence(30, 1000)
+
     init_scene()
 
     background = load_random_chessboard()
