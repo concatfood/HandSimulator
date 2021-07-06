@@ -1,14 +1,13 @@
 from OpenGL.GL import *
 
 # list of rendering settings
-buffer_data_usage = GL_DYNAMIC_DRAW
-far = 1
-fov = 45.0
-LIMIT_FPS = False
-NUM_FRAMES = 300000
-near = 0.1
-res = (240, 180)
-max_xy = int(round(max(res[0], res[1])))
-OUTPUT_MODE = 'monitor'
-SHADING = 'basic'
-USE_VBO_INDEXING = False
+buffer_data_usage = GL_DYNAMIC_DRAW     # for non-rigid objects
+far = 1                                 # distance to far-plane in meters
+fov = 45.0                              # field of view in degrees
+LIMIT_FPS = False                       # double buffer VSync
+NUM_FRAMES = float('inf')               # infinite -> number of frames in the sequence
+near = 0.1                              # distance to near-plane in meters
+res = (240, 180)                        # (width, height)
+OUTPUT_MODE = 'files'                   # <'monitor', 'files', 'both'>
+SHADING = 'basic'                       # <'plain', 'basic', 'shadow_mapping'>
+USE_VBO_INDEXING = False                # only use for rigid objects

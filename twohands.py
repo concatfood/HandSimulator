@@ -41,6 +41,8 @@ def init_mano(file_name):
                   'left': smplx.create(model_path='model', model_type='mano', use_pca=False, is_rhand=False,
                                        flat_hand_mean=True)}
 
+    return len(seq_dict)
+
 
 # interpolate to desired frame rate
 def interpolate_sequence(fps_input, fps_output):

@@ -60,6 +60,7 @@ void main()
 		segmentation = vec4(0.0, 0.0, 1.0, 1.0);
 	}
 
-	depth = vec4(vec3(linearize_depth(gl_FragCoord.z) / far), 1.0);
+//	depth = vec4(vec3(linearize_depth(gl_FragCoord.z) / far), 1.0);
+	depth = vec4(vec3(gl_FragCoord.z), 1.0);
 	normal = vec4((normalize(Normal_cameraspace) + vec3(1.0)) / 2.0, 1.0);
 }

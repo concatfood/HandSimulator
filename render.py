@@ -371,8 +371,8 @@ def load_random_chessboard():
     #         i_closest = i
     #         dist_closest = dist
 
-    # length_side = common_divisors[i_closest]  # for now
-    length_side = 15
+    # length_side = common_divisors[i_closest]
+    length_side = 10    # for now
 
     blocks_horizontal = int(round(res[0] / length_side))
     blocks_vertical = int(round(res[1] / length_side))
@@ -404,7 +404,7 @@ def load_random_chessboard():
 
 
 # contains render loop
-def loop(window, frame_buffers, background, hands, depth_texture):
+def loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence):
     color_attachment = GL_COLOR_ATTACHMENT0
     f = 0
     start_time = glfw.get_time()
@@ -577,7 +577,7 @@ def loop(window, frame_buffers, background, hands, depth_texture):
             glFinish()
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
 
-            num_digits = len(str(NUM_FRAMES - 1))
+            num_digits = len(str(int(round(min(NUM_FRAMES, num_frames_sequence))) - 1))
 
             glReadBuffer(GL_COLOR_ATTACHMENT0)
 
@@ -608,7 +608,7 @@ def loop(window, frame_buffers, background, hands, depth_texture):
 
         f += 1
 
-        if f >= NUM_FRAMES:
+        if f >= NUM_FRAMES or f >= num_frames_sequence:
             break
 
 
@@ -664,6 +664,8 @@ def setup_frame_buffers():
         glBindFramebuffer(GL_FRAMEBUFFER, frame_buffer_light)
         frame_buffers.append(frame_buffer_light)
 
+        max_xy = int(round(max(res[0], res[1])))
+
         depth_texture = GLuint(glGenTextures(1))
         glBindTexture(GL_TEXTURE_2D, depth_texture)
         glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT16, max_xy, max_xy, 0, GL_DEPTH_COMPONENT, GL_FLOAT,
@@ -693,8 +695,13 @@ def render():
         return
 
     init_opengl()
-    init_mano('sequences/1000fps/raw_sequence0.pkl')
+    num_frames_sequence = init_mano('sequences/1000fps/raw_sequence0.pkl')
     # interpolate_sequence(30, 1000)
+
+    print(num_frames_sequence)
+    print(int(round(min(NUM_FRAMES, num_frames_sequence))) - 1)
+    print(str(int(round(min(NUM_FRAMES, num_frames_sequence))) - 1))
+    print(len(str(int(round(min(NUM_FRAMES, num_frames_sequence))) - 1)))
 
     init_scene()
 
@@ -702,5 +709,5 @@ def render():
     hands = load_hands()
 
     frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-    loop(window, frame_buffers, background, hands, depth_texture)
+    loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence)
     delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
