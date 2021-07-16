@@ -698,11 +698,6 @@ def render():
     num_frames_sequence = init_mano('sequences/1000fps/raw_sequence0.pkl')
     # interpolate_sequence(30, 1000)
 
-    print(num_frames_sequence)
-    print(int(round(min(NUM_FRAMES, num_frames_sequence))) - 1)
-    print(str(int(round(min(NUM_FRAMES, num_frames_sequence))) - 1))
-    print(len(str(int(round(min(NUM_FRAMES, num_frames_sequence))) - 1)))
-
     init_scene()
 
     background = load_random_chessboard()
