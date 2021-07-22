@@ -511,11 +511,16 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
 
             # matrices needed for a MVP matrix
             projection_matrix = glm.perspective(glm.radians(fov), res[0] / res[1], near, far)
-            view_matrix = glm.lookAt(glm.vec3(hands_avg) + glm.vec3(0.5 * far, 0, 0),
-                                     glm.vec3(hands_avg) + glm.vec3(0.5 * far, 0, 0) +
-                                     glm.vec3(-1, 0, 0), glm.vec3(0, 0, 1))
-            model_matrix = glm.mat4()
+            view_matrix = glm.mat4()
 
+            if coordinate_system == 'world':
+                view_matrix = glm.lookAt(glm.vec3(hands_avg) + glm.vec3(0.5 * far, 0, 0),
+                                         glm.vec3(hands_avg) + glm.vec3(0.5 * far, 0, 0) +
+                                         glm.vec3(-1, 0, 0), glm.vec3(0, 0, 1))
+            elif coordinate_system == 'camera':
+                view_matrix = glm.lookAt(glm.vec3(0), glm.vec3(-1, 0, 0), glm.vec3(0, 0, 1))
+
+            model_matrix = glm.mat4()
             mvp = projection_matrix * view_matrix * model_matrix
 
             depth_bias_mvp = None
@@ -585,23 +590,23 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
             image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
             image.save(('frames/rgb/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
 
-            glReadBuffer(GL_COLOR_ATTACHMENT1)
-
-            data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-            image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-            image.save(('frames/segmentation/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
-
-            glReadBuffer(GL_COLOR_ATTACHMENT2)
-
-            data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-            image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-            image.save(('frames/depth/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
-
-            glReadBuffer(GL_COLOR_ATTACHMENT3)
-
-            data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-            image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-            image.save(('frames/normal/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+            # glReadBuffer(GL_COLOR_ATTACHMENT1)
+            #
+            # data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
+            # image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
+            # image.save(('frames/segmentation/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+            #
+            # glReadBuffer(GL_COLOR_ATTACHMENT2)
+            #
+            # data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
+            # image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
+            # image.save(('frames/depth/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+            #
+            # glReadBuffer(GL_COLOR_ATTACHMENT3)
+            #
+            # data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
+            # image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
+            # image.save(('frames/normal/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
 
         glfw.swap_buffers(window)
         glfw.poll_events()
@@ -695,7 +700,8 @@ def render():
         return
 
     init_opengl()
-    num_frames_sequence = init_mano('sequences/1000fps/raw_sequence0.pkl')
+    # num_frames_sequence = init_mano('sequences/1000fps/raw_sequence0.pkl')
+    num_frames_sequence = init_mano('sequences/output/4.pkl')
     # interpolate_sequence(30, 1000)
 
     init_scene()

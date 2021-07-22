@@ -2,6 +2,7 @@ from OpenGL.GL import *
 
 # list of rendering settings
 buffer_data_usage = GL_DYNAMIC_DRAW     # for non-rigid objects
+coordinate_system = 'camera'            # <'camera', 'world'>
 far = 1                                 # distance to far-plane in meters
 fov = 45.0                              # field of view in degrees
 LIMIT_FPS = False                       # double buffer VSync
