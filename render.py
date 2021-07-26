@@ -1,3 +1,4 @@
+import ffmpeg
 import glfw
 import glm
 from glm import *
@@ -148,7 +149,7 @@ def create_window():
         print('Failed to initialize GLFW')
         return None
 
-    if OUTPUT_MODE == 'files':
+    if OUTPUT_MODE == 'disk':
         glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
 
     glfw.window_hint(glfw.DOUBLEBUFFER, GL_TRUE if LIMIT_FPS else GL_FALSE)
@@ -197,6 +198,37 @@ def delete_opengl(frame_buffers, render_buffers, depth_texture, background, hand
         glDeleteTextures(1, depth_texture)
 
     glfw.terminate()
+
+
+# ffmpeg process for outputting videos
+def init_ffmpeg_processes():
+    outputs = ['rgb', 'segmentation', 'depth', 'normal']
+    processes = []
+
+    for o, output in enumerate(outputs):
+        process = None
+
+        if OUTPUTS[o] == 'o':
+            if OUTPUT_VIDEO_FORMAT == 'lossless':
+                process = (ffmpeg
+                           .input('pipe:', format='rawvideo', pix_fmt='rgb24', s='{}x{}'.format(res[0], res[1]),
+                                  framerate=fps_in)
+                           .output('frames/' + output + '.mp4', pix_fmt='yuv420p', vcodec='libx264', preset='veryslow',
+                                   crf=0, r=fps_out, movflags='faststart')
+                           .overwrite_output()
+                           .run_async(pipe_stdin=True))
+            elif OUTPUT_VIDEO_FORMAT == 'lossy':
+                process = (ffmpeg
+                           .input('pipe:', format='rawvideo', pix_fmt='rgb24', s='{}x{}'.format(res[0], res[1]),
+                                  framerate=fps_in)
+                           .output('frames/' + output + 'rgb.mp4', pix_fmt='yuv420p', vcodec='libx264', vprofile='high',
+                                   preset='slow', crf=18, r=fps_out, g=fps_out / 2, bf=2, movflags='faststart')
+                           .overwrite_output()
+                           .run_async(pipe_stdin=True))
+
+        processes.append(process)
+
+    return processes
 
 
 # initializes miscellaneous OpenGL settings
@@ -420,6 +452,12 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
     hands_avg += np.mean(hand_1, axis=0)
     hands_avg /= 2
 
+    # process for rendering output videos
+    processes = None
+
+    if OUTPUT_DISK_FORMAT == 'video':
+        processes = init_ffmpeg_processes()
+
     # render loop
     while glfw.get_key(window, glfw.KEY_ESCAPE) != glfw.PRESS and glfw.window_should_close(window) == 0:
         current_time = glfw.get_time()
@@ -576,37 +614,61 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
             glBlitFramebuffer(0, 0, res[0], res[1], 0, 0, res[0], res[1], GL_COLOR_BUFFER_BIT, GL_NEAREST)
 
-        # save to files
-        if OUTPUT_MODE == 'files' or OUTPUT_MODE == 'both':
+        # save to disk
+        if OUTPUT_MODE == 'disk' or OUTPUT_MODE == 'both':
             glFlush()
             glFinish()
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
 
             num_digits = len(str(int(round(min(NUM_FRAMES, num_frames_sequence)))))
 
-            glReadBuffer(GL_COLOR_ATTACHMENT0)
+            if OUTPUTS[0] == 'o':
+                glReadBuffer(GL_COLOR_ATTACHMENT0)
 
-            data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-            image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-            image.save(('frames/rgb/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+                data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
 
-            # glReadBuffer(GL_COLOR_ATTACHMENT1)
-            #
-            # data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-            # image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-            # image.save(('frames/segmentation/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
-            #
-            # glReadBuffer(GL_COLOR_ATTACHMENT2)
-            #
-            # data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-            # image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-            # image.save(('frames/depth/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
-            #
-            # glReadBuffer(GL_COLOR_ATTACHMENT3)
-            #
-            # data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-            # image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-            # image.save(('frames/normal/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+                if OUTPUT_DISK_FORMAT == 'images':
+                    image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
+                    image.save(('frames/rgb/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+                elif OUTPUT_DISK_FORMAT == 'video':
+                    processes[0].stdin.write(np.frombuffer(data, np.uint8).reshape([res[1], res[0], 4])[::-1, :, :3]
+                                             .astype(np.uint8).tobytes())
+
+            if OUTPUTS[1] == 'o':
+                glReadBuffer(GL_COLOR_ATTACHMENT1)
+
+                data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
+
+                if OUTPUT_DISK_FORMAT == 'images':
+                    image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
+                    image.save(('frames/segmentation/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+                elif OUTPUT_DISK_FORMAT == 'video':
+                    processes[1].stdin.write(np.frombuffer(data, np.uint8).reshape([res[1], res[0], 4])[::-1, :, :3]
+                                        .astype(np.uint8).tobytes())
+
+            if OUTPUTS[2] == 'o':
+                glReadBuffer(GL_COLOR_ATTACHMENT2)
+
+                data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
+
+                if OUTPUT_DISK_FORMAT == 'images':
+                    image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
+                    image.save(('frames/depth/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+                elif OUTPUT_DISK_FORMAT == 'video':
+                    processes[2].stdin.write(np.frombuffer(data, np.uint8).reshape([res[1], res[0], 4])[::-1, :, :3]
+                                             .astype(np.uint8).tobytes())
+
+            if OUTPUTS[3] == 'o':
+                glReadBuffer(GL_COLOR_ATTACHMENT3)
+
+                data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
+
+                if OUTPUT_DISK_FORMAT == 'images':
+                    image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
+                    image.save(('frames/normal/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
+                elif OUTPUT_DISK_FORMAT == 'video':
+                    processes[3].stdin.write(np.frombuffer(data, np.uint8).reshape([res[1], res[0], 4])[::-1, :, :3]
+                                             .astype(np.uint8).tobytes())
 
         glfw.swap_buffers(window)
         glfw.poll_events()
@@ -701,7 +763,7 @@ def render():
 
     init_opengl()
     # num_frames_sequence = init_mano('sequences/1000fps/raw_sequence0.pkl')
-    num_frames_sequence = init_mano('sequences/output/4.pkl')
+    num_frames_sequence = init_mano('sequences/output/3/4.pkl')
     # interpolate_sequence(30, 1000)
 
     init_scene()
