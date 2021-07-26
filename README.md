@@ -15,6 +15,7 @@ Requirements include but are not limited to:
 * GLFW
 * PyGLM
 * OpenCV
+* FFmpeg-Python
 * the [MANO](https://mano.is.tue.mpg.de/) hand model and [SMPLX](https://github.com/vchoutas/smplx)
 
 ### Rendering
