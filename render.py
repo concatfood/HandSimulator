@@ -377,7 +377,7 @@ def load_random_chessboard():
     blocks_horizontal = int(round(res[0] / length_side))
     blocks_vertical = int(round(res[1] / length_side))
 
-    np.random.seed(0)   # sequence number
+    np.random.seed(4)   # sequence number
     intensities = np.random.rand(blocks_vertical, blocks_horizontal) * 255
 
     for bv in range(blocks_vertical):
@@ -582,7 +582,7 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
             glFinish()
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
 
-            num_digits = len(str(int(round(min(NUM_FRAMES, num_frames_sequence))) - 1))
+            num_digits = len(str(int(round(min(NUM_FRAMES, num_frames_sequence)))))
 
             glReadBuffer(GL_COLOR_ATTACHMENT0)
 
