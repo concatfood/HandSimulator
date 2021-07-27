@@ -637,7 +637,7 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
                                    '.png', 'PNG')
                     elif OUTPUT_DISK_FORMAT == 'video':
                         processes[o].stdin.write(np.frombuffer(data, np.uint8).reshape([res[1], res[0], 4])[::-1, :, :3]
-                                                 .astype(np.uint8).tobytes())
+                                                 .tobytes())
 
         glfw.swap_buffers(window)
         glfw.poll_events()
