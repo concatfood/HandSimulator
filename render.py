@@ -620,55 +620,24 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
             glFinish()
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
 
+            outputs = ['rgb', 'segmentation', 'depth', 'normal']
+            color_attachments = [GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3]
+
             num_digits = len(str(int(round(min(NUM_FRAMES, num_frames_sequence)))))
 
-            if OUTPUTS[0] == 'o':
-                glReadBuffer(GL_COLOR_ATTACHMENT0)
+            for o, output in enumerate(outputs):
+                if OUTPUTS[o] == 'o':
+                    glReadBuffer(color_attachments[o])
 
-                data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
+                    data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
 
-                if OUTPUT_DISK_FORMAT == 'images':
-                    image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-                    image.save(('frames/rgb/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
-                elif OUTPUT_DISK_FORMAT == 'video':
-                    processes[0].stdin.write(np.frombuffer(data, np.uint8).reshape([res[1], res[0], 4])[::-1, :, :3]
-                                             .astype(np.uint8).tobytes())
-
-            if OUTPUTS[1] == 'o':
-                glReadBuffer(GL_COLOR_ATTACHMENT1)
-
-                data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-
-                if OUTPUT_DISK_FORMAT == 'images':
-                    image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-                    image.save(('frames/segmentation/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
-                elif OUTPUT_DISK_FORMAT == 'video':
-                    processes[1].stdin.write(np.frombuffer(data, np.uint8).reshape([res[1], res[0], 4])[::-1, :, :3]
-                                        .astype(np.uint8).tobytes())
-
-            if OUTPUTS[2] == 'o':
-                glReadBuffer(GL_COLOR_ATTACHMENT2)
-
-                data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-
-                if OUTPUT_DISK_FORMAT == 'images':
-                    image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-                    image.save(('frames/depth/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
-                elif OUTPUT_DISK_FORMAT == 'video':
-                    processes[2].stdin.write(np.frombuffer(data, np.uint8).reshape([res[1], res[0], 4])[::-1, :, :3]
-                                             .astype(np.uint8).tobytes())
-
-            if OUTPUTS[3] == 'o':
-                glReadBuffer(GL_COLOR_ATTACHMENT3)
-
-                data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
-
-                if OUTPUT_DISK_FORMAT == 'images':
-                    image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-                    image.save(('frames/normal/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
-                elif OUTPUT_DISK_FORMAT == 'video':
-                    processes[3].stdin.write(np.frombuffer(data, np.uint8).reshape([res[1], res[0], 4])[::-1, :, :3]
-                                             .astype(np.uint8).tobytes())
+                    if OUTPUT_DISK_FORMAT == 'images':
+                        image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
+                        image.save(('frames/' + outputs[o] + '/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) +
+                                   '.png', 'PNG')
+                    elif OUTPUT_DISK_FORMAT == 'video':
+                        processes[o].stdin.write(np.frombuffer(data, np.uint8).reshape([res[1], res[0], 4])[::-1, :, :3]
+                                                 .astype(np.uint8).tobytes())
 
         glfw.swap_buffers(window)
         glfw.poll_events()
