@@ -647,6 +647,10 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
         if f >= NUM_FRAMES or f >= num_frames_sequence:
             break
 
+    for process in processes:
+        if process is not None:
+            process.stdin.close()
+
 
 # prepare frame buffers for single render pass
 def setup_frame_buffers():
