@@ -409,7 +409,7 @@ def load_random_chessboard():
     blocks_horizontal = int(round(res[0] / length_side))
     blocks_vertical = int(round(res[1] / length_side))
 
-    np.random.seed(4)   # sequence number
+    np.random.seed(0)   # sequence number
     intensities = np.random.rand(blocks_vertical, blocks_horizontal) * 255
 
     for bv in range(blocks_vertical):
@@ -453,7 +453,7 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
     hands_avg /= 2
 
     # process for rendering output videos
-    processes = None
+    processes = []
 
     if OUTPUT_DISK_FORMAT == 'video':
         processes = init_ffmpeg_processes()
@@ -735,8 +735,8 @@ def render():
         return
 
     init_opengl()
-    # num_frames_sequence = init_mano('sequences/1000fps/raw_sequence0.pkl')
-    num_frames_sequence = init_mano('sequences/output/3/4.pkl')
+    # num_frames_sequence = init_mano('sequences/30fps/raw_sequence0.pkl')
+    num_frames_sequence = init_mano('sequences/1000fps/raw_sequence0.pkl')
     # interpolate_sequence(30, 1000)
 
     init_scene()
