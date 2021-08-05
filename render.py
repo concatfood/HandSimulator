@@ -4,7 +4,9 @@ import glm
 from glm import *
 from light import get_light_inv_dir
 from light import get_light_pos
+import math
 import numpy as np
+from pathlib import Path
 import pickle
 from PIL import Image
 from PIL import ImageOps
@@ -175,33 +177,56 @@ def delete_opengl(frame_buffers, render_buffers, depth_texture, background, hand
     glDeleteProgram(background.program_id)
     glDeleteTextures(background.texture_id)
 
+    background.vertex_array_object = None
+    background.vertex_buffer = None
+    background.uv_buffer = None
+    background.program_id = None
+    background.texture_id = None
+
     for hand in hands:
         glDeleteBuffers(1, hand.vertex_array_object)
         glDeleteBuffers(1, hand.vertex_buffer)
         glDeleteBuffers(1, hand.uv_buffer)
         glDeleteBuffers(1, hand.normal_buffer)
 
+        hand.vertex_array_object = None
+        hand.vertex_buffer = None
+        hand.uv_buffer = None
+        hand.normal_buffer = None
+
         if USE_VBO_INDEXING:
             glDeleteBuffers(1, hand.element_buffer)
 
+            hand.element_buffer = None
+
         glDeleteTextures(hand.texture_id)
+
+        hand.texture_id = None
 
     glDeleteProgram(Scene.program_id)
 
-    for frame_buffer in frame_buffers:
+    Scene.program_id = None
+
+    for f, frame_buffer in enumerate(frame_buffers):
         glDeleteFramebuffers(1, frame_buffer)
 
-    for render_buffer in render_buffers:
+        frame_buffers[f] = None
+
+    for r, render_buffer in enumerate(render_buffers):
         glDeleteRenderbuffers(1, render_buffer)
+
+        render_buffers[r] = None
 
     if depth_texture is not None:
         glDeleteTextures(1, depth_texture)
 
-    glfw.terminate()
+        depth_texture = None
+
+    # glfw.terminate()
 
 
 # ffmpeg process for outputting videos
-def init_ffmpeg_processes():
+def init_ffmpeg_processes(sequence, aa, ap):
     outputs = ['rgb', 'segmentation', 'depth', 'normal']
     processes = []
 
@@ -209,20 +234,24 @@ def init_ffmpeg_processes():
         process = None
 
         if OUTPUTS[o] == 'o':
+            Path('frames/' + output).mkdir(parents=True, exist_ok=True)
+
             if OUTPUT_VIDEO_FORMAT == 'lossless':
                 process = (ffmpeg
                            .input('pipe:', format='rawvideo', pix_fmt='rgb24', s='{}x{}'.format(res[0], res[1]),
                                   framerate=fps_in)
-                           .output('frames/' + output + '.mp4', pix_fmt='yuv420p', vcodec='libx264', preset='veryslow',
-                                   crf=0, r=fps_out, movflags='faststart')
+                           .output('frames/' + output + '/' + sequence + '_' + str(aa) + '_' + str(ap) + '.mp4',
+                                   pix_fmt='yuv420p', vcodec='libx264', preset='veryslow', crf=0, r=fps_out,
+                                   movflags='faststart')
                            .overwrite_output()
                            .run_async(pipe_stdin=True))
             elif OUTPUT_VIDEO_FORMAT == 'lossy':
                 process = (ffmpeg
                            .input('pipe:', format='rawvideo', pix_fmt='rgb24', s='{}x{}'.format(res[0], res[1]),
                                   framerate=fps_in)
-                           .output('frames/' + output + 'rgb.mp4', pix_fmt='yuv420p', vcodec='libx264', vprofile='high',
-                                   preset='slow', crf=18, r=fps_out, g=fps_out / 2, bf=2, movflags='faststart')
+                           .output('frames/' + output + '/' + sequence + '_' + str(aa) + '_' + str(ap) + '.mp4',
+                                   pix_fmt='yuv420p', vcodec='libx264', vprofile='high', preset='slow', crf=18,
+                                   r=fps_out, g=fps_out / 2, bf=2, movflags='faststart')
                            .overwrite_output()
                            .run_async(pipe_stdin=True))
 
@@ -365,7 +394,7 @@ def load_hands():
 
 
 # generates a random (currently fixed) chessboard as a background
-def load_random_chessboard():
+def load_random_chessboard(s):
     # stretch image to canvas
     vertices = np.array([[-1.0, -1.0, 0.0],
                          [1.0, -1.0, 0.0],
@@ -409,7 +438,7 @@ def load_random_chessboard():
     blocks_horizontal = int(round(res[0] / length_side))
     blocks_vertical = int(round(res[1] / length_side))
 
-    np.random.seed(0)   # sequence number
+    np.random.seed(s)
     intensities = np.random.rand(blocks_vertical, blocks_horizontal) * 255
 
     for bv in range(blocks_vertical):
@@ -436,27 +465,32 @@ def load_random_chessboard():
 
 
 # contains render loop
-def loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence):
+def loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, hands_avg, s_sequence,
+         aa_angle_augmentation, ap_angle_position):
+    num_frames_to_draw = int(round(min(NUM_FRAMES, num_frames_sequence)))
     color_attachment = GL_COLOR_ATTACHMENT0
     f = 0
     start_time = glfw.get_time()
     last_time = start_time
     nb_frames = 0
+    s, sequence = s_sequence
+    aa, angle_augmentation = aa_angle_augmentation
+    ap, angle_position = ap_angle_position
 
-    # used for initializing a camera position
-    mano_hands = get_mano_hands(0)
-    hands_avg = np.zeros(3)
-    hand_0 = mano_hands[0][0]
-    hand_1 = mano_hands[1][0]
-    hands_avg += np.mean(hand_0, axis=0)
-    hands_avg += np.mean(hand_1, axis=0)
-    hands_avg /= 2
+    # used for initializing a camera position (first frame only)
+    # mano_hands = get_mano_hands(0)
+    # hands_avg = np.zeros(3)
+    # hand_0 = mano_hands[0][0]
+    # hand_1 = mano_hands[1][0]
+    # hands_avg += np.mean(hand_0, axis=0)
+    # hands_avg += np.mean(hand_1, axis=0)
+    # hands_avg /= 2
 
     # process for rendering output videos
     processes = []
 
     if OUTPUT_DISK_FORMAT == 'video':
-        processes = init_ffmpeg_processes()
+        processes = init_ffmpeg_processes(sequence, aa, ap)
 
     # render loop
     while glfw.get_key(window, glfw.KEY_ESCAPE) != glfw.PRESS and glfw.window_should_close(window) == 0:
@@ -527,9 +561,9 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
 
         # 2. draw hands
         for i, hand in enumerate(hands):
+            hand.vertices_raw = mano_hands[i][0]
             hand.faces = mano_hands[i][1]
             hand.faces = np.concatenate((hand.faces, hand.faces_hole))
-            hand.vertices_raw = mano_hands[i][0]
 
             hand.compute_vertices()
             hand.compute_normals()
@@ -552,9 +586,23 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
             view_matrix = glm.mat4()
 
             if coordinate_system == 'world':
-                view_matrix = glm.lookAt(glm.vec3(hands_avg) + glm.vec3(0.5 * far, 0, 0),
-                                         glm.vec3(hands_avg) + glm.vec3(0.5 * far, 0, 0) +
-                                         glm.vec3(-1, 0, 0), glm.vec3(0, 0, 1))
+                camera_relative = glm.vec3(0.5 * far, 0, 0)
+                forward = glm.vec3(-1, 0, 0)
+                up = glm.vec3(0, 0, 1)
+
+                if angle_position is not None:
+                    camera_relative_transformed = glm.rotateZ(camera_relative, angle_augmentation)
+                    forward_transformed = glm.rotateZ(forward, angle_augmentation)
+                    camera_relative = glm.rotateX(camera_relative_transformed, angle_position)
+                    forward = glm.rotateX(forward_transformed, angle_position)
+                    line_target_2d = np.array([forward.y, -forward.x])
+                    line_target_2d /= np.linalg.norm(line_target_2d)
+                    right_horizontal = glm.vec3(line_target_2d[0], line_target_2d[1], 0)
+                    up = glm.cross(-forward_transformed, right_horizontal)
+
+                view_matrix = glm.lookAt(glm.vec3(hands_avg) + camera_relative,
+                                         glm.vec3(hands_avg) + camera_relative + forward,
+                                         up)
             elif coordinate_system == 'camera':
                 view_matrix = glm.lookAt(glm.vec3(0), glm.vec3(-1, 0, 0), glm.vec3(0, 0, 1))
 
@@ -622,19 +670,20 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
 
             outputs = ['rgb', 'segmentation', 'depth', 'normal']
             color_attachments = [GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3]
-
-            num_digits = len(str(int(round(min(NUM_FRAMES, num_frames_sequence)))))
+            num_digits = len(str(num_frames_to_draw))
 
             for o, output in enumerate(outputs):
                 if OUTPUTS[o] == 'o':
                     glReadBuffer(color_attachments[o])
-
                     data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
 
                     if OUTPUT_DISK_FORMAT == 'images':
+                        Path('frames/' + output + '/' + sequence + '/' + str(aa) + '/' + str(ap))\
+                            .mkdir(parents=True, exist_ok=True)
+
                         image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-                        image.save(('frames/' + outputs[o] + '/frame_{f:0' + str(num_digits) + 'd}').format(f=f+1) +
-                                   '.png', 'PNG')
+                        image.save(('frames/' + output + '/' + sequence + '/' + str(aa) + '/' + str(ap) + '/frame_{f:0'
+                                    + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
                     elif OUTPUT_DISK_FORMAT == 'video':
                         processes[o].stdin.write(np.frombuffer(data, np.uint8).reshape([res[1], res[0], 4])[::-1, :, :3]
                                                  .tobytes())
@@ -644,7 +693,7 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
 
         f += 1
 
-        if f >= NUM_FRAMES or f >= num_frames_sequence:
+        if f >= num_frames_to_draw:
             break
 
     for process in processes:
@@ -729,21 +778,39 @@ def setup_frame_buffers():
 
 # create window, load background and hands, prepare frame buffers, render, destroy
 def render():
+    hands_avg_all = [np.array([1.15030333, -0.26061168, 0.78577989]), np.array([1.12174921, -0.20740417, 0.81597976]),
+                     np.array([1.16503733, -0.31407652, 0.81827346]), np.array([1.03878048, -0.27550721, 0.82758726]),
+                     np.array([1.03542053, -0.1853186, 0.77306902]), np.array([0.98415266, -0.42346881, 0.76287726]),
+                     np.array([0.99070947, -0.40857825, 0.75110521]), np.array([1.00070618, -0.40154313, 0.77840039])]
+    sequences = ['raw_sequence0', 'raw_sequence1', 'raw_sequence2', 'raw_sequence3', 'raw_sequence4', 'raw_sequence5',
+                 'raw_sequence6', 'raw_sequence7']
+    angles_augmentation = [5.0 / 360.0 * (2.0 * math.pi), 10.0 / 360.0 * (2.0 * math.pi),
+                           15.0 / 360.0 * (2.0 * math.pi), 20.0 / 360.0 * (2.0 * math.pi),
+                           25.0 / 360.0 * (2.0 * math.pi)]
+    angles_position = [None, 45.0 / 360.0 * (2 * math.pi), 135.0 / 360.0 * (2 * math.pi), 225.0 / 360.0 * (2 * math.pi),
+                       315.0 / 360.0 * (2 * math.pi)]
+
     window = create_window()
 
     if window is None:
         return
 
-    init_opengl()
-    # num_frames_sequence = init_mano('sequences/30fps/raw_sequence0.pkl')
-    num_frames_sequence = init_mano('sequences/1000fps/raw_sequence0.pkl')
-    # interpolate_sequence(30, 1000)
+    for s, sequence in enumerate(sequences):
+        for aa, angle_augmentation in enumerate(angles_augmentation):
+            for ap, angle_position in enumerate(angles_position):
+                # draw from middle view only once (assume angles_position[0] == None)
+                if aa > 0 and ap == 0:
+                    continue
 
-    init_scene()
+                init_opengl()
+                init_scene()
+                hands = load_hands()
+                frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
+                num_frames_sequence = init_mano('sequences/1000fps/' + sequence + '.pkl')
+                background = load_random_chessboard(s * len(angles_augmentation) * len(angles_position)
+                                                    + aa * len(angles_position) + ap)
+                loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, hands_avg_all[s],
+                     (s, sequence), (aa, angle_augmentation), (ap, angle_position))
+                delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
 
-    background = load_random_chessboard()
-    hands = load_hands()
-
-    frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-    loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence)
-    delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
+    glfw.terminate()    # usually part of delete_opengl
