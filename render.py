@@ -501,7 +501,7 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
     # process for rendering output videos
     processes = []
 
-    if OUTPUT_DISK_FORMAT == 'video':
+    if OUTPUT_DISK_FORMAT == 'video' and (OUTPUT_MODE == 'disk' or OUTPUT_MODE == 'both'):
         processes = init_ffmpeg_processes(sequence, aa, ap)
 
     # render loop
@@ -709,7 +709,7 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
             image = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
             frame = np.frombuffer(image, dtype=np.uint8).reshape((res[1], res[0], 4))[::-1, :, :]
             frame_gray = cv.cvtColor(frame, cv.COLOR_RGBA2GRAY)
-            frame_log = torch.tensor(np.log(frame_gray.astype('float32')) + 1.0).to('cuda:0')
+            frame_log = torch.tensor(np.log(frame_gray.astype('float32') + 1.0)).to('cuda:0')
             timestamp_ns = torch.from_numpy(np.array([round(f / fps_esim * 1e9)]).astype('int64')).to('cuda:0')
 
             events = esim.forward(frame_log, timestamp_ns)
@@ -755,13 +755,6 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
 
         Path('output/events').mkdir(parents=True, exist_ok=True)
         np.savez_compressed('output/events/' + sequence + '_' + str(aa) + '_' + str(ap) + '.npz', events_total_np)
-
-        # # with np.load('test.npy') as data:
-        # loaded = np.load('test.npz')['arr_0']
-        #
-        # for e, event in enumerate(events_total_np):
-        #     print(event)
-        #     print(loaded[e])
 
 
 # prepare frame buffers for single render pass
@@ -858,32 +851,22 @@ def render():
     if window is None:
         return
 
-    # for s, sequence in enumerate(sequences):
-    #     for aa, angle_augmentation in enumerate(angles_augmentation):
-    #         for ap, angle_position in enumerate(angles_position):
-    #             # draw from middle view only once (assume angles_position[0] == None)
-    #             if aa > 0 and ap == 0:
-    #                 continue
-    #
-    #             init_opengl()
-    #             init_scene()
-    #             hands = load_hands()
-    #             frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-    #             num_frames_sequence = init_mano('sequences/1000fps/' + sequence + '.pkl')
-    #             background = load_random_chessboard(s * len(angles_augmentation) * len(angles_position)
-    #                                                 + aa * len(angles_position) + ap)
-    #             loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, hands_avg_all[s],
-    #                  (s, sequence), (aa, angle_augmentation), (ap, angle_position))
-    #             delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
+    for s, sequence in enumerate(sequences):
+        for aa, angle_augmentation in enumerate(angles_augmentation):
+            for ap, angle_position in enumerate(angles_position):
+                # draw from middle view only once (assume angles_position[0] == None)
+                if aa > 0 and ap == 0:
+                    continue
 
-    init_opengl()
-    init_scene()
-    hands = load_hands()
-    frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-    num_frames_sequence = init_mano('sequences/1000fps/raw_sequence0.pkl')
-    background = load_random_chessboard(0)
-    loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, hands_avg_all[0],
-         (0, sequences[0]), (0, None), (0, None))
-    delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
+                init_opengl()
+                init_scene()
+                hands = load_hands()
+                frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
+                num_frames_sequence = init_mano('sequences/1000fps/' + sequence + '.pkl')
+                background = load_random_chessboard(s * len(angles_augmentation) * len(angles_position)
+                                                    + aa * len(angles_position) + ap)
+                loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, hands_avg_all[s],
+                     (s, sequence), (aa, angle_augmentation), (ap, angle_position))
+                delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
 
     glfw.terminate()    # usually part of delete_opengl
