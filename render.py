@@ -1,3 +1,5 @@
+import cv2 as cv
+from esim_torch.esim_torch import EventSimulator_torch
 import ffmpeg
 import glfw
 import glm
@@ -13,6 +15,7 @@ from PIL import ImageOps
 from random import random
 from settings import *
 import time
+import torch
 from twohands import init_mano
 from twohands import interpolate_sequence
 from twohands import get_mano_hands
@@ -218,7 +221,7 @@ def delete_opengl(frame_buffers, render_buffers, depth_texture, background, hand
         render_buffers[r] = None
 
     if depth_texture is not None:
-        glDeleteTextures(1, depth_texture)
+        glDeleteTextures(depth_texture)
 
         depth_texture = None
 
@@ -234,14 +237,14 @@ def init_ffmpeg_processes(sequence, aa, ap):
         process = None
 
         if OUTPUTS[o] == 'o':
-            Path('frames/' + output).mkdir(parents=True, exist_ok=True)
+            Path('output/' + output).mkdir(parents=True, exist_ok=True)
 
             if OUTPUT_VIDEO_FORMAT == 'lossless':
                 process = (ffmpeg
                            .input('pipe:', format='rawvideo', pix_fmt='rgb24', s='{}x{}'.format(res[0], res[1]),
                                   framerate=fps_in)
-                           .output('frames/' + output + '/' + sequence + '_' + str(aa) + '_' + str(ap) + '.mp4',
-                                   pix_fmt='yuv420p', vcodec='libx264', preset='veryslow', crf=0, r=fps_out,
+                           .output('output/' + output + '/' + sequence + '_' + str(aa) + '_' + str(ap) + '.mp4',
+                                   pix_fmt='yuv444p', vcodec='libx264', preset='veryslow', crf=0, r=fps_out,
                                    movflags='faststart')
                            .overwrite_output()
                            .run_async(pipe_stdin=True))
@@ -249,7 +252,7 @@ def init_ffmpeg_processes(sequence, aa, ap):
                 process = (ffmpeg
                            .input('pipe:', format='rawvideo', pix_fmt='rgb24', s='{}x{}'.format(res[0], res[1]),
                                   framerate=fps_in)
-                           .output('frames/' + output + '/' + sequence + '_' + str(aa) + '_' + str(ap) + '.mp4',
+                           .output('output/' + output + '/' + sequence + '_' + str(aa) + '_' + str(ap) + '.mp4',
                                    pix_fmt='yuv420p', vcodec='libx264', vprofile='high', preset='slow', crf=18,
                                    r=fps_out, g=fps_out / 2, bf=2, movflags='faststart')
                            .overwrite_output()
@@ -411,15 +414,15 @@ def load_random_chessboard(s):
     background.uvs = uvs
     background.indices = indices
 
-    common_divisors = []
-
-    for i in range(1, int(round(min(res[1], res[0]))) + 1):
-        if res[1] % i == res[0] % i == 0:
-            common_divisors.append(i)
-
     data = np.zeros((res[1], res[0], 4), GLubyte)
     data[:, :, 3] = 255
 
+    # common_divisors = []
+    #
+    # for i in range(1, int(round(min(res[1], res[0]))) + 1):
+    #     if res[1] % i == res[0] % i == 0:
+    #         common_divisors.append(i)
+    #
     # r = random()
     #
     # i_closest = -1
@@ -431,7 +434,7 @@ def load_random_chessboard(s):
     #     if dist < dist_closest:
     #         i_closest = i
     #         dist_closest = dist
-
+    #
     # length_side = common_divisors[i_closest]
     length_side = 10    # for now
 
@@ -470,9 +473,9 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
     num_frames_to_draw = int(round(min(NUM_FRAMES, num_frames_sequence)))
     color_attachment = GL_COLOR_ATTACHMENT0
     f = 0
+    nb_frames = 0
     start_time = glfw.get_time()
     last_time = start_time
-    nb_frames = 0
     s, sequence = s_sequence
     aa, angle_augmentation = aa_angle_augmentation
     ap, angle_position = ap_angle_position
@@ -485,6 +488,15 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
     # hands_avg += np.mean(hand_0, axis=0)
     # hands_avg += np.mean(hand_1, axis=0)
     # hands_avg /= 2
+
+    # ESIM for event generation
+    esim = None
+    num_events_total = 0
+    events_total = []
+
+    if USE_ESIM:
+        # use the same parameters as for DAVIS 240C
+        esim = EventSimulator_torch(contrast_threshold_neg=0.525, contrast_threshold_pos=0.525, refractory_period_ns=0)
 
     # process for rendering output videos
     processes = []
@@ -549,7 +561,7 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
             glUseProgram(Scene.depth_program_id)
 
             light_inv_dir = get_light_inv_dir('random')
-            depth_projection_matrix = glm.ortho(-0.5, 0.5, -0.5, 0.5, -0.5, 0.5)
+            depth_projection_matrix = glm.ortho(-0.5, 0.5, -0.5, 0.5)
             depth_view_matrix = glm.lookAt(light_inv_dir, glm.vec3(0.0, 0.0, 0.0), glm.vec3(0.0, 1.0, 0.0))
             depth_model_matrix = glm.mat4(1.0)
             depth_mvp = depth_projection_matrix * depth_view_matrix * depth_model_matrix
@@ -678,15 +690,40 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
                     data = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
 
                     if OUTPUT_DISK_FORMAT == 'images':
-                        Path('frames/' + output + '/' + sequence + '/' + str(aa) + '/' + str(ap))\
+                        Path('output/' + output + '/' + sequence + '/' + str(aa) + '/' + str(ap))\
                             .mkdir(parents=True, exist_ok=True)
 
                         image = ImageOps.flip(Image.frombytes("RGBA", (res[0], res[1]), data))
-                        image.save(('frames/' + output + '/' + sequence + '/' + str(aa) + '/' + str(ap) + '/frame_{f:0'
+                        image.save(('output/' + output + '/' + sequence + '/' + str(aa) + '/' + str(ap) + '/frame_{f:0'
                                     + str(num_digits) + 'd}').format(f=f+1) + '.png', 'PNG')
                     elif OUTPUT_DISK_FORMAT == 'video':
                         processes[o].stdin.write(np.frombuffer(data, np.uint8).reshape([res[1], res[0], 4])[::-1, :, :3]
                                                  .tobytes())
+
+        if USE_ESIM:
+            glFlush()
+            glFinish()
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+            glReadBuffer(GL_COLOR_ATTACHMENT0)
+
+            image = glReadPixels(0, 0, res[0], res[1], GL_RGBA, GL_UNSIGNED_BYTE)
+            frame = np.frombuffer(image, dtype=np.uint8).reshape((res[1], res[0], 4))[::-1, :, :]
+            frame_gray = cv.cvtColor(frame, cv.COLOR_RGBA2GRAY)
+            frame_log = torch.tensor(np.log(frame_gray.astype('float32')) + 1.0).to('cuda:0')
+            timestamp_ns = torch.from_numpy(np.array([round(f / fps_esim * 1e9)]).astype('int64')).to('cuda:0')
+
+            events = esim.forward(frame_log, timestamp_ns)
+
+            if events is not None:
+                num_events_total += len(events['t'])
+
+                times = events['t'].cpu().numpy()
+                xs = events['x'].cpu().numpy()
+                ys = events['y'].cpu().numpy()
+                polarities = events['p'].cpu().numpy()
+                polarities[polarities == -1] = 0
+
+                events_total.append((times, xs, ys, polarities))
 
         glfw.swap_buffers(window)
         glfw.poll_events()
@@ -699,6 +736,32 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
     for process in processes:
         if process is not None:
             process.stdin.close()
+
+    if USE_ESIM:
+        dtype_events = np.dtype([('t', np.int64), ('x', np.int16), ('y', np.int16), ('p', np.int8)])
+        events_total_np = np.zeros(num_events_total, dtype_events)
+
+        index_curr = 0
+
+        for events in events_total:
+            len_curr = len(events[0])
+
+            events_total_np[index_curr:index_curr + len_curr]['t'] = events[0]
+            events_total_np[index_curr:index_curr + len_curr]['x'] = events[1]
+            events_total_np[index_curr:index_curr + len_curr]['y'] = events[2]
+            events_total_np[index_curr:index_curr + len_curr]['p'] = events[3]
+
+            index_curr += len_curr
+
+        Path('output/events').mkdir(parents=True, exist_ok=True)
+        np.savez_compressed('output/events/' + sequence + '_' + str(aa) + '_' + str(ap) + '.npz', events_total_np)
+
+        # # with np.load('test.npy') as data:
+        # loaded = np.load('test.npz')['arr_0']
+        #
+        # for e, event in enumerate(events_total_np):
+        #     print(event)
+        #     print(loaded[e])
 
 
 # prepare frame buffers for single render pass
@@ -795,22 +858,32 @@ def render():
     if window is None:
         return
 
-    for s, sequence in enumerate(sequences):
-        for aa, angle_augmentation in enumerate(angles_augmentation):
-            for ap, angle_position in enumerate(angles_position):
-                # draw from middle view only once (assume angles_position[0] == None)
-                if aa > 0 and ap == 0:
-                    continue
+    # for s, sequence in enumerate(sequences):
+    #     for aa, angle_augmentation in enumerate(angles_augmentation):
+    #         for ap, angle_position in enumerate(angles_position):
+    #             # draw from middle view only once (assume angles_position[0] == None)
+    #             if aa > 0 and ap == 0:
+    #                 continue
+    #
+    #             init_opengl()
+    #             init_scene()
+    #             hands = load_hands()
+    #             frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
+    #             num_frames_sequence = init_mano('sequences/1000fps/' + sequence + '.pkl')
+    #             background = load_random_chessboard(s * len(angles_augmentation) * len(angles_position)
+    #                                                 + aa * len(angles_position) + ap)
+    #             loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, hands_avg_all[s],
+    #                  (s, sequence), (aa, angle_augmentation), (ap, angle_position))
+    #             delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
 
-                init_opengl()
-                init_scene()
-                hands = load_hands()
-                frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-                num_frames_sequence = init_mano('sequences/1000fps/' + sequence + '.pkl')
-                background = load_random_chessboard(s * len(angles_augmentation) * len(angles_position)
-                                                    + aa * len(angles_position) + ap)
-                loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, hands_avg_all[s],
-                     (s, sequence), (aa, angle_augmentation), (ap, angle_position))
-                delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
+    init_opengl()
+    init_scene()
+    hands = load_hands()
+    frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
+    num_frames_sequence = init_mano('sequences/1000fps/raw_sequence0.pkl')
+    background = load_random_chessboard(0)
+    loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, hands_avg_all[0],
+         (0, sequences[0]), (0, None), (0, None))
+    delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
 
     glfw.terminate()    # usually part of delete_opengl
