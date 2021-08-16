@@ -1,5 +1,5 @@
 import cv2 as cv
-from esim_torch.esim_torch import EventSimulator_torch
+from esim.esim_torch.esim_torch import EventSimulator_torch
 import ffmpeg
 import glfw
 import glm
