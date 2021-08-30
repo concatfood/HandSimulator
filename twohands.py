@@ -126,8 +126,8 @@ def interpolate_sequence(fps_input, fps_output):
     seq_dict_out = {}
 
     for f in range(length_out):
-        seq_dict_out[f] = [{'pose': poses_right_out[f, :], 'shape': shapes_right_out[f, :], 'trans': trans_right_out[f, :],
-                            'hand_type': 'right'},
+        seq_dict_out[f] = [{'pose': poses_right_out[f, :], 'shape': shapes_right_out[f, :],
+                            'trans': trans_right_out[f, :], 'hand_type': 'right'},
                            {'pose': poses_left_out[f, :], 'shape': shapes_left_out[f, :], 'trans': trans_left_out[f, :],
                             'hand_type': 'left'}]
 
@@ -154,45 +154,3 @@ def get_mano_hands(frame):
         mano_hands.append((vertices, faces, mano_joints))
 
     return mano_hands
-
-
-# removes tracking error caused by the gloves
-# an error is defined by the continuation of two consecutive frames with the same tracking values
-# this step is not used anymore
-def remove_tracking_errors(threshold=1e-9):
-    global seq_dict
-
-    length_in = len(seq_dict)
-    x_in = np.linspace(0, length_in, num=length_in, endpoint=False)
-
-    poses_right_in = np.zeros((length_in, 48))
-    shapes_right_in = np.zeros((length_in, 10))
-    trans_right_in = np.zeros((length_in, 3))
-    poses_left_in = np.zeros((length_in, 48))
-    shapes_left_in = np.zeros((length_in, 10))
-    trans_left_in = np.zeros((length_in, 3))
-
-    to_remove = []
-
-    for t in range(0, length_in - 1):
-        params_right = np.concatenate((poses_right_in[t:t + 2, :], shapes_right_in[t:t + 2, :],
-                                       trans_right_in[t:t + 2, :]), axis=1)
-        params_left = np.concatenate((poses_left_in[t:t + 2, :], shapes_left_in[t:t + 2, :],
-                                      trans_left_in[t:t + 2, :]), axis=1)
-
-        diff_right = params_right[1, :] - params_right[0, :]
-        diff_left = params_left[1, :] - params_left[0, :]
-
-        if abs(np.mean(diff_right)) < threshold or abs(np.mean(diff_left)) < threshold:
-            to_remove.append(t)
-            to_remove.append(t + 1)
-
-    x_in = np.delete(x_in, to_remove)
-    poses_right_in = np.delete(poses_right_in, to_remove, axis=0)
-    shapes_right_in = np.delete(shapes_right_in, to_remove, axis=0)
-    trans_right_in = np.delete(trans_right_in, to_remove, axis=0)
-    poses_left_in = np.delete(poses_left_in, to_remove, axis=0)
-    shapes_left_in = np.delete(shapes_left_in, to_remove, axis=0)
-    trans_left_in = np.delete(trans_left_in, to_remove, axis=0)
-
-    # ...
