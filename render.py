@@ -5,7 +5,6 @@ import glfw
 import glm
 from glm import *
 from light import get_light_inv_dir
-from light import get_light_pos
 import math
 import numpy as np
 from pathlib import Path
@@ -19,6 +18,7 @@ import torch
 from twohands import init_mano
 from twohands import interpolate_sequence
 from twohands import get_mano_hands
+from twohands import transform_coordinate_system
 from utils.controls import compute_matrices_from_inputs
 from utils.objloader import load_hole
 from utils.object import Object
@@ -468,7 +468,7 @@ def load_random_chessboard(s):
 
 
 # contains render loop
-def loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, hands_avg, s_sequence,
+def loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, s_sequence,
          aa_angle_augmentation, ap_angle_position):
     num_frames_to_draw = int(round(min(NUM_FRAMES, num_frames_sequence)))
     color_attachment = GL_COLOR_ATTACHMENT0
@@ -479,15 +479,6 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
     s, sequence = s_sequence
     aa, angle_augmentation = aa_angle_augmentation
     ap, angle_position = ap_angle_position
-
-    # used for initializing a camera position (first frame only)
-    # mano_hands = get_mano_hands(0)
-    # hands_avg = np.zeros(3)
-    # hand_0 = mano_hands[0][0]
-    # hand_1 = mano_hands[1][0]
-    # hands_avg += np.mean(hand_0, axis=0)
-    # hands_avg += np.mean(hand_1, axis=0)
-    # hands_avg /= 2
 
     # ESIM for event generation
     esim = None
@@ -569,7 +560,7 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
             glUniformMatrix4fv(Scene.depth_matrix_id, 1, GL_FALSE, value_ptr(depth_mvp))
 
         # load two MANO hands
-        mano_hands = get_mano_hands(f)
+        mano_hands = get_mano_hands(f, angle_augmentation, angle_position)
 
         # 2. draw hands
         for i, hand in enumerate(hands):
@@ -596,28 +587,6 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
             # matrices needed for a MVP matrix
             projection_matrix = glm.perspective(glm.radians(fov), res[0] / res[1], near, far)
             view_matrix = glm.mat4()
-
-            if coordinate_system == 'world':
-                camera_relative = glm.vec3(0.5 * far, 0, 0)
-                forward = glm.vec3(-1, 0, 0)
-                up = glm.vec3(0, 0, 1)
-
-                if angle_position is not None:
-                    camera_relative_transformed = glm.rotateZ(camera_relative, angle_augmentation)
-                    forward_transformed = glm.rotateZ(forward, angle_augmentation)
-                    camera_relative = glm.rotateX(camera_relative_transformed, angle_position)
-                    forward = glm.rotateX(forward_transformed, angle_position)
-                    line_target_2d = np.array([forward.y, -forward.x])
-                    line_target_2d /= np.linalg.norm(line_target_2d)
-                    right_horizontal = glm.vec3(line_target_2d[0], line_target_2d[1], 0)
-                    up = glm.cross(-forward, right_horizontal)
-
-                view_matrix = glm.lookAt(glm.vec3(hands_avg) + camera_relative,
-                                         glm.vec3(hands_avg) + camera_relative + forward,
-                                         up)
-            elif coordinate_system == 'camera':
-                view_matrix = glm.lookAt(glm.vec3(0), glm.vec3(-1, 0, 0), glm.vec3(0, 0, 1))
-
             model_matrix = glm.mat4()
             mvp = projection_matrix * view_matrix * model_matrix
 
@@ -641,8 +610,7 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
             glUniformMatrix4fv(Scene.view_matrix_id, 1, GL_FALSE, value_ptr(view_matrix))
 
             if SHADING == 'basic':
-                # light_pos = get_light_pos('random', glm.vec3(hands_avg))
-                light_pos = glm.vec3(hands_avg) + glm.vec3(0.5 * far, 0, 1)
+                light_pos = glm.vec3(0.0, 1.0, 0.0)
                 glUniform3f(Scene.light_id, light_pos.x, light_pos.y, light_pos.z)
 
             if SHADING == 'shadow_mapping':
@@ -834,10 +802,6 @@ def setup_frame_buffers():
 
 # create window, load background and hands, prepare frame buffers, render, destroy
 def render():
-    hands_avg_all = [np.array([1.15030333, -0.26061168, 0.78577989]), np.array([1.12174921, -0.20740417, 0.81597976]),
-                     np.array([1.16503733, -0.31407652, 0.81827346]), np.array([1.03878048, -0.27550721, 0.82758726]),
-                     np.array([1.03542053, -0.1853186, 0.77306902]), np.array([0.98415266, -0.42346881, 0.76287726]),
-                     np.array([0.99070947, -0.40857825, 0.75110521]), np.array([1.00070618, -0.40154313, 0.77840039])]
     sequences = ['raw_sequence0', 'raw_sequence1', 'raw_sequence2', 'raw_sequence3', 'raw_sequence4', 'raw_sequence5',
                  'raw_sequence6', 'raw_sequence7']
     angles_augmentation = [5.0 / 360.0 * (2.0 * math.pi), 10.0 / 360.0 * (2.0 * math.pi),
@@ -851,35 +815,36 @@ def render():
     if window is None:
         return
 
-    # for s, sequence in enumerate(sequences):
-    #     for aa, angle_augmentation in enumerate(angles_augmentation):
-    #         for ap, angle_position in enumerate(angles_position):
-    #             # draw from middle view only once (assume angles_position[0] == None)
-    #             if aa > 0 and ap == 0:
-    #                 continue
-    #
-    #             init_opengl()
-    #             init_scene()
-    #             hands = load_hands()
-    #             frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-    #             num_frames_sequence = init_mano('sequences/1000fps/' + sequence + '.pkl')
-    #             background = load_random_chessboard(s * len(angles_augmentation) * len(angles_position)
-    #                                                 + aa * len(angles_position) + ap)
-    #             loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, hands_avg_all[s],
-    #                  (s, sequence), (aa, angle_augmentation), (ap, angle_position))
-    #             delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
-    #
-    # glfw.terminate()    # usually part of delete_opengl
+    for s, sequence in enumerate(sequences):
+        for aa, angle_augmentation in enumerate(angles_augmentation):
+            for ap, angle_position in enumerate(angles_position):
+                # draw from middle view only once (assume angles_position[0] == None)
+                if aa > 0 and ap == 0:
+                    continue
 
-    init_opengl()
-    init_scene()
-    hands = load_hands()
-    frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-    num_frames_sequence = init_mano('sequences/output/raw_sequence6_0_0.pkl')
-    background = load_random_chessboard(6 * len(angles_augmentation) * len(angles_position)
-                                        + 0 * len(angles_position) + 0)
-    loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, hands_avg_all[6],
-         (6, sequences[6]), (0, angles_augmentation[0]), (0, angles_position[0]))
-    delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
+                init_opengl()
+                init_scene()
+                hands = load_hands()
+                frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
+                num_frames_sequence = init_mano('sequences/1000fps_cam/' + sequence + '.pkl')
+                background = load_random_chessboard(s * len(angles_augmentation) * len(angles_position)
+                                                    + aa * len(angles_position) + ap)
+                loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (s, sequence),
+                     (aa, angle_augmentation), (ap, angle_position))
+                delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
 
     glfw.terminate()    # usually part of delete_opengl
+
+    # # for testing
+    # init_opengl()
+    # init_scene()
+    # hands = load_hands()
+    # frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
+    # num_frames_sequence = init_mano('sequences/output/raw_sequence6_0_0.pkl')
+    # background = load_random_chessboard(6 * len(angles_augmentation) * len(angles_position)
+    #                                     + 0 * len(angles_position) + 0)
+    # loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (6, sequences[6]),
+    #      (0, angles_augmentation[0]), (0, angles_position[0]))
+    # delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
+    #
+    # glfw.terminate()    # usually part of delete_opengl

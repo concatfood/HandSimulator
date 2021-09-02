@@ -1,3 +1,6 @@
+import copy
+from tqdm import tqdm
+import glm
 import numpy as np
 import pickle
 from scipy.interpolate import interp1d
@@ -7,6 +10,8 @@ import smplx
 import torch
 
 mano_layer = {}
+root_right = None
+root_left = None
 seq_dict = {}
 
 
@@ -138,19 +143,121 @@ def interpolate_sequence(fps_input, fps_output):
         pickle.dump(seq_dict, f)
 
 
+# transforms global MANO translations and rotations into the OpenGL camera coordinate system
+def transform_coordinate_system(s):
+    global seq_dict
+
+    hands_avg_all = [np.array([1.15030333, -0.26061168, 0.78577989]), np.array([1.12174921, -0.20740417, 0.81597976]),
+                     np.array([1.16503733, -0.31407652, 0.81827346]), np.array([1.03878048, -0.27550721, 0.82758726]),
+                     np.array([1.03542053, -0.1853186, 0.77306902]), np.array([0.98415266, -0.42346881, 0.76287726]),
+                     np.array([0.99070947, -0.40857825, 0.75110521]), np.array([1.00070618, -0.40154313, 0.77840039])]
+    hands_avg = hands_avg_all[s]
+
+    far = 1.0
+    camera_relative = glm.vec3(0.5 * far, 0.0, 0.0)
+    forward = glm.vec3(-1.0, 0.0, 0.0)
+    up = glm.vec3(0.0, 0.0, 1.0)
+
+    view_matrix = np.array(glm.lookAt(glm.vec3(hands_avg) + camera_relative,
+                                      glm.vec3(hands_avg) + camera_relative + forward,
+                                      up))
+    rot_vm = view_matrix[:3, :3]
+    t_cam = hands_avg + camera_relative
+
+    seq_dict_out = {}
+
+    for f in tqdm(seq_dict.keys()):
+        seq_dict_out[f] = []
+
+        for h, hand in enumerate(seq_dict[f]):
+            rot_mano = hand['pose'][:3]
+            trans_mano = hand['trans']
+            trans_manocam = trans_mano - t_cam
+            rot_new = R.from_matrix(rot_vm) * R.from_rotvec(rot_mano)
+            hand['pose'][:3] = rot_new.as_rotvec()
+
+            base = {'pose': hand['pose'], 'trans': np.zeros(3), 'shape': hand['shape']}
+
+            _, _, joints = compute_mano_hands(base, hand['hand_type'], mano_layer)
+            root = joints[0, ...]
+
+            trans_new = -root + rot_vm.dot(root + trans_manocam)
+
+            mano_param_updated = copy.deepcopy(hand)
+            mano_param_updated['pose'][:3] = hand['pose'][:3]
+            mano_param_updated['trans'] = trans_new
+
+            seq_dict_out[f].append({'pose': mano_param_updated['pose'], 'shape': mano_param_updated['shape'],
+                                    'trans': mano_param_updated['trans'], 'hand_type': 'right' if h == 0 else 'left'})
+
+    seq_dict = seq_dict_out
+
+    # save to a file for later
+    with open('sequences/raw_sequence' + str(s) + '.pkl', 'wb') as f:
+        pickle.dump(seq_dict, f)
+
+
 # returns two hands for a given frame in the recorded (interpolated) sequence
-def get_mano_hands(frame):
+def get_mano_hands(frame, angle_augmentation, angle_position):
     global mano_layer
+    global root_left
+    global root_right
     global seq_dict
 
     params = seq_dict[frame]
+
+    camera_relative = glm.vec3(0.0, 0.0, 0.0)
+    hands_avg = glm.vec3(0.0, 0.0, -0.5)
+    forward = glm.vec3(0.0, 0.0, -1.0)
+
+    view_matrix = np.eye(4)
+
+    if angle_position is not None:
+        camera_relative_transformed = glm.rotateY(camera_relative - hands_avg, angle_augmentation) + hands_avg
+        forward_transformed = glm.rotateY(forward, angle_augmentation)
+        camera_relative = glm.rotateZ(camera_relative_transformed, angle_position)
+        forward = glm.rotateZ(forward_transformed, angle_position)
+        line_target_2d = np.array([-forward.z, forward.x])
+        line_target_2d /= np.linalg.norm(line_target_2d)
+        right_horizontal = glm.vec3(line_target_2d[0], 0.0, line_target_2d[1])
+        up = glm.cross(-forward, right_horizontal)
+
+        view_matrix = np.array(glm.lookAt(glm.vec3(hands_avg) + camera_relative,
+                                          glm.vec3(hands_avg) + camera_relative + forward,
+                                          up))
+
+    rot_vm = view_matrix[:3, :3]
+
+    if root_left is None or root_right is None:
+        # assume shape to be zero
+        base = {'pose': np.zeros(48), 'trans': np.zeros(3), 'shape': np.zeros(10)}
+
+        _, _, joints_left = compute_mano_hands(base, 'left', mano_layer)
+        _, _, joints_right = compute_mano_hands(base, 'right', mano_layer)
+        root_left = joints_left[0, ...]
+        root_right = joints_right[0, ...]
 
     mano_hands = []
 
     for param_id in range(len(params)):
         param = params[param_id]
+
+        rot_mano = param['pose'][:3]
+        trans_mano = param['trans']
+        trans_manocam = trans_mano - camera_relative
+        rot_new = R.from_matrix(rot_vm) * R.from_rotvec(rot_mano)
+        param['pose'][:3] = rot_new.as_rotvec()
+
         hand_type = param['hand_type']
-        vertices, faces, mano_joints = compute_mano_hands(param, hand_type, mano_layer)
+        root = root_left if hand_type == 'left' else root_right
+
+        trans_new = -root + rot_vm.dot(root + trans_manocam)
+
+        param_updated = copy.deepcopy(param)
+        param_updated['pose'][:3] = param['pose'][:3]
+        param_updated['trans'] = trans_new
+
+        vertices, faces, mano_joints = compute_mano_hands(param_updated, hand_type, mano_layer)
         mano_hands.append((vertices, faces, mano_joints))
 
     return mano_hands
