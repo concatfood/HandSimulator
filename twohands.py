@@ -9,6 +9,8 @@ from scipy.spatial.transform import Slerp
 import smplx
 import torch
 
+import math
+
 mano_layer = {}
 root_right = None
 root_left = None
@@ -213,18 +215,28 @@ def get_mano_hands(frame, angle_augmentation, angle_position):
     view_matrix = np.eye(4)
 
     if angle_position is not None:
-        camera_relative_transformed = glm.rotateY(camera_relative - hands_avg, angle_augmentation) + hands_avg
-        forward_transformed = glm.rotateY(forward, angle_augmentation)
-        camera_relative = glm.rotateZ(camera_relative_transformed, angle_position)
-        forward = glm.rotateZ(forward_transformed, angle_position)
-        line_target_2d = np.array([-forward.z, forward.x])
+        rot_aa = np.array([[math.cos(angle_augmentation), 0.0, math.sin(angle_augmentation)],
+                           [0.0, 1.0, 0.0],
+                           [-math.sin(angle_augmentation), 0.0, math.cos(angle_augmentation)]])
+        rot_ap = np.array([[math.cos(angle_position), -math.sin(angle_position), 0.0],
+                           [math.sin(angle_position), math.cos(angle_position), 0.0],
+                           [0.0, 0.0, 1.0]])
+
+        camera_relative_transformed = rot_aa.dot(camera_relative - hands_avg) + hands_avg
+        forward_transformed = rot_aa.dot(forward)
+        camera_relative = rot_ap.dot(camera_relative_transformed)
+        forward = rot_ap.dot(forward_transformed)
+        line_target_2d = np.array([-forward[2], forward[0]])
         line_target_2d /= np.linalg.norm(line_target_2d)
         right_horizontal = glm.vec3(line_target_2d[0], 0.0, line_target_2d[1])
-        up = glm.cross(-forward, right_horizontal)
+        up = np.cross(-forward, right_horizontal)
 
-        view_matrix = np.array(glm.lookAt(glm.vec3(hands_avg) + camera_relative,
-                                          glm.vec3(hands_avg) + camera_relative + forward,
-                                          up))
+        view_matrix = np.zeros((4, 4))
+        view_matrix[0, :3] = np.array(right_horizontal)
+        view_matrix[1, :3] = np.array(up)
+        view_matrix[2, :3] = np.array(-forward)
+        view_matrix[:3, 3] = -view_matrix[:3, :3].dot(hands_avg + camera_relative)
+        view_matrix[3, 3] = 1.0
 
     rot_vm = view_matrix[:3, :3]
 

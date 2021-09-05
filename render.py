@@ -815,36 +815,36 @@ def render():
     if window is None:
         return
 
-    for s, sequence in enumerate(sequences):
-        for aa, angle_augmentation in enumerate(angles_augmentation):
-            for ap, angle_position in enumerate(angles_position):
-                # draw from middle view only once (assume angles_position[0] == None)
-                if aa > 0 and ap == 0:
-                    continue
-
-                init_opengl()
-                init_scene()
-                hands = load_hands()
-                frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-                num_frames_sequence = init_mano('sequences/1000fps_cam/' + sequence + '.pkl')
-                background = load_random_chessboard(s * len(angles_augmentation) * len(angles_position)
-                                                    + aa * len(angles_position) + ap)
-                loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (s, sequence),
-                     (aa, angle_augmentation), (ap, angle_position))
-                delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
-
-    glfw.terminate()    # usually part of delete_opengl
-
-    # # for testing
-    # init_opengl()
-    # init_scene()
-    # hands = load_hands()
-    # frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-    # num_frames_sequence = init_mano('sequences/output/raw_sequence6_0_0.pkl')
-    # background = load_random_chessboard(6 * len(angles_augmentation) * len(angles_position)
-    #                                     + 0 * len(angles_position) + 0)
-    # loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (6, sequences[6]),
-    #      (0, angles_augmentation[0]), (0, angles_position[0]))
-    # delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
+    # for s, sequence in enumerate(sequences):
+    #     for aa, angle_augmentation in enumerate(angles_augmentation):
+    #         for ap, angle_position in enumerate(angles_position):
+    #             # draw from middle view only once (assume angles_position[0] == None)
+    #             if aa > 0 and ap == 0:
+    #                 continue
+    #
+    #             init_opengl()
+    #             init_scene()
+    #             hands = load_hands()
+    #             frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
+    #             num_frames_sequence = init_mano('sequences/1000fps_cam/' + sequence + '.pkl')
+    #             background = load_random_chessboard(s * len(angles_augmentation) * len(angles_position)
+    #                                                 + aa * len(angles_position) + ap)
+    #             loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (s, sequence),
+    #                  (aa, angle_augmentation), (ap, angle_position))
+    #             delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
     #
     # glfw.terminate()    # usually part of delete_opengl
+
+    # for testing
+    init_opengl()
+    init_scene()
+    hands = load_hands()
+    frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
+    num_frames_sequence = init_mano('sequences/output/raw_sequence0_0_0.pkl')
+    background = load_random_chessboard(0 * len(angles_augmentation) * len(angles_position)
+                                        + 0 * len(angles_position) + 0)
+    loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (0, sequences[0]),
+         (0, angles_augmentation[0]), (0, angles_position[0]))
+    delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
+
+    glfw.terminate()    # usually part of delete_opengl
