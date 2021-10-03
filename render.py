@@ -351,9 +351,7 @@ def load_background(path_texture):
 
 
 # loads random background image
-def load_random_background(s):
-    random.seed(s)
-
+def load_random_background():
     files_textures = sorted([name for name in os.listdir('textures')
                              if os.path.isfile(os.path.join('textures', name)) and name.endswith('.png')])
 
@@ -443,7 +441,7 @@ def load_hands():
 
 
 # generates a random (currently fixed) chessboard as a background
-def load_random_chessboard(s):
+def load_random_chessboard():
     # stretch image to canvas
     vertices = np.array([[-1.0, -1.0, 0.0],
                          [1.0, -1.0, 0.0],
@@ -487,7 +485,6 @@ def load_random_chessboard(s):
     blocks_horizontal = int(round(res[0] / length_side))
     blocks_vertical = int(round(res[1] / length_side))
 
-    np.random.seed(s)
     intensities = np.random.rand(blocks_vertical, blocks_horizontal) * 255
 
     for bv in range(blocks_vertical):
@@ -527,6 +524,7 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
     ap, angle_position = ap_angle_position
 
     random.seed(s * len(angles_augmentation) * len(angles_position) + aa * len(angles_position) + ap)
+    np.random.seed(s * len(angles_augmentation) * len(angles_position) + aa * len(angles_position) + ap)
 
     # ESIM for event generation
     esim = None
@@ -895,10 +893,8 @@ def render():
                 hands = load_hands()
                 frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
                 num_frames_sequence = init_mano('sequences/final/' + sequence + '.pkl')
-                # background = load_random_chessboard(s * len(angles_augmentation) * len(angles_position)
-                #                                     + aa * len(angles_position) + ap)
-                background = load_random_background(s * len(angles_augmentation) * len(angles_position)
-                                                    + aa * len(angles_position) + ap)
+                # background = load_random_chessboard()
+                background = load_random_background()
                 loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (s, sequence),
                      (aa, angle_augmentation), (ap, angle_position))
                 delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
@@ -913,8 +909,7 @@ def render():
     # hands = load_hands()
     # frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
     # num_frames_sequence = init_mano('sequences/output/raw_sequence' + name_sequence + '_0_0.pkl')
-    # background = load_random_chessboard(int(name_sequence) * len(angles_augmentation) * len(angles_position)
-    #                                     + 0 * len(angles_position) + 0)
+    # background = load_random_chessboard()
     # loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence,
     #      (int(name_sequence), sequences[int(name_sequence)]), (0, angles_augmentation[0]), (0, angles_position[0]))
     # delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
