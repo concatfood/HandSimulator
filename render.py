@@ -535,7 +535,9 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
 
     if USE_ESIM:
         # use the same parameters as for DAVIS 240C
-        esim = EventSimulator_torch(contrast_threshold_neg=0.525, contrast_threshold_pos=0.525, refractory_period_ns=0)
+        contrast_threshold = np.random.normal(0.5, 0.0004)
+        esim = EventSimulator_torch(contrast_threshold_neg=contrast_threshold,
+                                    contrast_threshold_pos=contrast_threshold, refractory_period_ns=0)
 
     # process for rendering output videos
     processes = []
