@@ -5,13 +5,17 @@ import glfw
 import glm
 from glm import *
 from light import get_light_inv_dir
+from light import get_light_pos
+from light import reset_light
 import math
 import numpy as np
+import os
 from pathlib import Path
 import pickle
 from PIL import Image
 from PIL import ImageOps
-from random import random
+import random
+from random import randrange
 from settings import *
 import time
 import torch
@@ -24,6 +28,15 @@ from utils.objloader import load_hole
 from utils.object import Object
 from utils.shader import load_shaders
 from utils.texture import load_texture
+
+
+sequences = ['raw_sequence0', 'raw_sequence1', 'raw_sequence2', 'raw_sequence3', 'raw_sequence4', 'raw_sequence5',
+             'raw_sequence6', 'raw_sequence7']
+angles_augmentation = [5.0 / 360.0 * (2.0 * math.pi), 10.0 / 360.0 * (2.0 * math.pi),
+                       15.0 / 360.0 * (2.0 * math.pi), 20.0 / 360.0 * (2.0 * math.pi),
+                       25.0 / 360.0 * (2.0 * math.pi)]
+angles_position = [None, 45.0 / 360.0 * (2 * math.pi), 135.0 / 360.0 * (2 * math.pi), 225.0 / 360.0 * (2 * math.pi),
+                   315.0 / 360.0 * (2 * math.pi)]
 
 
 # contains OpenGL IDs for the background
@@ -337,9 +350,42 @@ def load_background(path_texture):
     return background
 
 
+# loads random background image
+def load_random_background(s):
+    random.seed(s)
+
+    files_textures = sorted([name for name in os.listdir('textures')
+                             if os.path.isfile(os.path.join('textures', name)) and name.endswith('.png')])
+
+    path_texture = files_textures[randrange(len(files_textures))]
+
+    # stretch image to canvas
+    vertices = np.array([[-1.0, -1.0, 0.0],
+                         [1.0, -1.0, 0.0],
+                         [-1.0,  1.0, 0.0],
+                         [1.0,  1.0, 0.0]])
+    uvs = np.array([[0.0, 0.0],
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                    [1.0, 1.0]])
+    indices = np.array([0, 1, 2, 2, 1, 3])
+
+    background = Background()
+    background.vertices = vertices
+    background.uvs = uvs
+    background.indices = indices
+    background.texture_id = load_texture(path_texture, rand=True)
+    background.program_id = load_shaders('vert_bg.glsl', 'frag_bg.glsl')
+    background.texture_sampler_id = glGetUniformLocation(background.program_id, 'texture_sampler')
+
+    buffer_data_background(background)
+
+    return background
+
+
 # loads two hands with textures, texture maps and precomputed neighbors
 def load_hands():
-    texture_id = load_texture('texture.png')
+    texture_id = load_texture('hand/texture.png')
 
     right_hand = Hand()
     right_hand.texture_id = texture_id
@@ -480,6 +526,8 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
     aa, angle_augmentation = aa_angle_augmentation
     ap, angle_position = ap_angle_position
 
+    random.seed(s * len(angles_augmentation) * len(angles_position) + aa * len(angles_position) + ap)
+
     # ESIM for event generation
     esim = None
     num_events_total = 0
@@ -551,7 +599,7 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
 
             glUseProgram(Scene.depth_program_id)
 
-            light_inv_dir = get_light_inv_dir('random')
+            light_inv_dir = get_light_inv_dir('random', 10)
             depth_projection_matrix = glm.ortho(-0.5, 0.5, -0.5, 0.5)
             depth_view_matrix = glm.lookAt(light_inv_dir, glm.vec3(0.0, 0.0, 0.0), glm.vec3(0.0, 1.0, 0.0))
             depth_model_matrix = glm.mat4(1.0)
@@ -561,6 +609,30 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
 
         # load two MANO hands
         mano_hands = get_mano_hands(f, angle_augmentation, angle_position)
+
+        # # test 3d and 2d joints locations
+        # fovy = np.radians(fov)
+        # focal = 0.5 * res[1] / math.tan(fovy / 2.0)
+        # mat_cam = np.array([[focal, 0.0, -res[0] / 2.0],
+        #                     [0.0, -focal, -res[1] / 2.0],
+        #                     [0.0, 0.0, -1.0]])
+        #
+        # vertices_right = mano_hands[0][0]
+        # vertices_left = mano_hands[1][0]
+        # joints_right = mano_hands[0][2]
+        # joints_left = mano_hands[1][2]
+        # joints_right = np.concatenate((joints_right, vertices_right[[745, 317, 444, 556, 673]]))
+        # joints_left = np.concatenate((joints_left, vertices_left[[745, 317, 445, 556, 673]]))
+        # joints_right = joints_right[[0, 13, 14, 15, 16, 1, 2, 3, 17, 4, 5, 6, 18, 10, 11, 12, 19, 7, 8, 9, 20]]
+        # joints_left = joints_left[[0, 13, 14, 15, 16, 1, 2, 3, 17, 4, 5, 6, 18, 10, 11, 12, 19, 7, 8, 9, 20]]
+        # joints_3d = np.concatenate((joints_right, joints_left))
+        # joints_2d_intrinsic = np.dot(joints_3d, mat_cam.transpose())
+        # joints_2d = joints_2d_intrinsic[..., 0:2] / joints_2d_intrinsic[..., [2]]
+        #
+        # print('3D joints')
+        # print(joints_3d)
+        # print('2D joints')
+        # print(joints_2d)
 
         # 2. draw hands
         for i, hand in enumerate(hands):
@@ -610,7 +682,7 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
             glUniformMatrix4fv(Scene.view_matrix_id, 1, GL_FALSE, value_ptr(view_matrix))
 
             if SHADING == 'basic':
-                light_pos = glm.vec3(0.0, 1.0, 0.0)
+                light_pos = get_light_pos('random', glm.vec3(0.0, 0.0, 0.5 * far), 10)
                 glUniform3f(Scene.light_id, light_pos.x, light_pos.y, light_pos.z)
 
             if SHADING == 'shadow_mapping':
@@ -700,6 +772,8 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
 
         if f >= num_frames_to_draw:
             break
+
+    reset_light()
 
     for process in processes:
         if process is not None:
@@ -802,49 +876,45 @@ def setup_frame_buffers():
 
 # create window, load background and hands, prepare frame buffers, render, destroy
 def render():
-    sequences = ['raw_sequence0', 'raw_sequence1', 'raw_sequence2', 'raw_sequence3', 'raw_sequence4', 'raw_sequence5',
-                 'raw_sequence6', 'raw_sequence7']
-    angles_augmentation = [5.0 / 360.0 * (2.0 * math.pi), 10.0 / 360.0 * (2.0 * math.pi),
-                           15.0 / 360.0 * (2.0 * math.pi), 20.0 / 360.0 * (2.0 * math.pi),
-                           25.0 / 360.0 * (2.0 * math.pi)]
-    angles_position = [None, 45.0 / 360.0 * (2 * math.pi), 135.0 / 360.0 * (2 * math.pi), 225.0 / 360.0 * (2 * math.pi),
-                       315.0 / 360.0 * (2 * math.pi)]
-
     window = create_window()
 
     if window is None:
         return
 
-    # for s, sequence in enumerate(sequences):
-    #     for aa, angle_augmentation in enumerate(angles_augmentation):
-    #         for ap, angle_position in enumerate(angles_position):
-    #             # draw from middle view only once (assume angles_position[0] == None)
-    #             if aa > 0 and ap == 0:
-    #                 continue
-    #
-    #             init_opengl()
-    #             init_scene()
-    #             hands = load_hands()
-    #             frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-    #             num_frames_sequence = init_mano('sequences/1000fps_cam/' + sequence + '.pkl')
-    #             background = load_random_chessboard(s * len(angles_augmentation) * len(angles_position)
-    #                                                 + aa * len(angles_position) + ap)
-    #             loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (s, sequence),
-    #                  (aa, angle_augmentation), (ap, angle_position))
-    #             delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
-    #
-    # glfw.terminate()    # usually part of delete_opengl
+    for s, sequence in enumerate(sequences):
+        for aa, angle_augmentation in enumerate(angles_augmentation):
+            for ap, angle_position in enumerate(angles_position):
+                # draw from middle view only once (assume angles_position[0] == None)
+                if aa > 0 and ap == 0:
+                    continue
 
-    # for testing
-    init_opengl()
-    init_scene()
-    hands = load_hands()
-    frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-    num_frames_sequence = init_mano('sequences/output/raw_sequence0_0_0.pkl')
-    background = load_random_chessboard(0 * len(angles_augmentation) * len(angles_position)
-                                        + 0 * len(angles_position) + 0)
-    loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (0, sequences[0]),
-         (0, angles_augmentation[0]), (0, angles_position[0]))
-    delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
+                init_opengl()
+                init_scene()
+                hands = load_hands()
+                frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
+                num_frames_sequence = init_mano('sequences/final/' + sequence + '.pkl')
+                # background = load_random_chessboard(s * len(angles_augmentation) * len(angles_position)
+                #                                     + aa * len(angles_position) + ap)
+                background = load_random_background(s * len(angles_augmentation) * len(angles_position)
+                                                    + aa * len(angles_position) + ap)
+                loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (s, sequence),
+                     (aa, angle_augmentation), (ap, angle_position))
+                delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
 
     glfw.terminate()    # usually part of delete_opengl
+
+    # # for testing
+    # name_sequence = '6'
+    #
+    # init_opengl()
+    # init_scene()
+    # hands = load_hands()
+    # frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
+    # num_frames_sequence = init_mano('sequences/output/raw_sequence' + name_sequence + '_0_0.pkl')
+    # background = load_random_chessboard(int(name_sequence) * len(angles_augmentation) * len(angles_position)
+    #                                     + 0 * len(angles_position) + 0)
+    # loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence,
+    #      (int(name_sequence), sequences[int(name_sequence)]), (0, angles_augmentation[0]), (0, angles_position[0]))
+    # delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
+    #
+    # glfw.terminate()    # usually part of delete_opengl

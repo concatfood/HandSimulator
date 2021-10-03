@@ -52,7 +52,7 @@ def init_mano(file_name):
 
 
 # interpolate to desired frame rate
-def interpolate_sequence(fps_input, fps_output):
+def interpolate_sequence(seq, fps_input, fps_output):
     global seq_dict
 
     length_in = len(seq_dict)
@@ -141,19 +141,19 @@ def interpolate_sequence(fps_input, fps_output):
     seq_dict = seq_dict_out
 
     # save to a file for later
-    with open('sequences/1000fps/raw_sequence0.pkl', 'wb') as f:
+    with open('sequences/1000fps/raw_sequence' + str(seq) + '.pkl', 'wb') as f:
         pickle.dump(seq_dict, f)
 
 
 # transforms global MANO translations and rotations into the OpenGL camera coordinate system
-def transform_coordinate_system(s):
+def transform_coordinate_system(seq):
     global seq_dict
 
     hands_avg_all = [np.array([1.15030333, -0.26061168, 0.78577989]), np.array([1.12174921, -0.20740417, 0.81597976]),
                      np.array([1.16503733, -0.31407652, 0.81827346]), np.array([1.03878048, -0.27550721, 0.82758726]),
                      np.array([1.03542053, -0.1853186, 0.77306902]), np.array([0.98415266, -0.42346881, 0.76287726]),
                      np.array([0.99070947, -0.40857825, 0.75110521]), np.array([1.00070618, -0.40154313, 0.77840039])]
-    hands_avg = hands_avg_all[s]
+    hands_avg = hands_avg_all[seq]
 
     far = 1.0
     camera_relative = glm.vec3(0.5 * far, 0.0, 0.0)
@@ -163,6 +163,7 @@ def transform_coordinate_system(s):
     view_matrix = np.array(glm.lookAt(glm.vec3(hands_avg) + camera_relative,
                                       glm.vec3(hands_avg) + camera_relative + forward,
                                       up))
+
     rot_vm = view_matrix[:3, :3]
     t_cam = hands_avg + camera_relative
 
@@ -194,9 +195,53 @@ def transform_coordinate_system(s):
 
     seq_dict = seq_dict_out
 
-    # save to a file for later
-    with open('sequences/raw_sequence' + str(s) + '.pkl', 'wb') as f:
-        pickle.dump(seq_dict, f)
+    # also apply corrective rotation
+    cam_old = np.array([0.0, 0.0, 0.5 * far])
+    angle_corr = -36 / 360 * 2 * math.pi
+    rot_corr = np.array([[np.cos(angle_corr), 0.0, np.sin(angle_corr)],
+                         [0.0, 1.0, 0.0],
+                         [-np.sin(angle_corr), 0.0, np.cos(angle_corr)]])
+    cam_new = rot_corr.dot(cam_old) - cam_old
+    up_corr = np.array([0.0, 1.0, 0.0])
+
+    view_matrix = np.array(glm.lookAt(glm.vec3(cam_new),
+                                      glm.vec3(np.array([0.0, 0.0, -0.5 * far])),
+                                      glm.vec3(up_corr)))
+
+    rot_vm = view_matrix[:3, :3]
+    t_cam = cam_new
+
+    seq_dict_out = {}
+
+    for f in tqdm(seq_dict.keys()):
+        seq_dict_out[f] = []
+
+        for h, hand in enumerate(seq_dict[f]):
+            rot_mano = hand['pose'][:3]
+            trans_mano = hand['trans']
+            trans_manocam = trans_mano - t_cam
+            rot_new = R.from_matrix(rot_vm) * R.from_rotvec(rot_mano)
+            hand['pose'][:3] = rot_new.as_rotvec()
+
+            base = {'pose': hand['pose'], 'trans': np.zeros(3), 'shape': hand['shape']}
+
+            _, _, joints = compute_mano_hands(base, hand['hand_type'], mano_layer)
+            root = joints[0, ...]
+
+            trans_new = -root + rot_vm.dot(root + trans_manocam)
+
+            mano_param_updated = copy.deepcopy(hand)
+            mano_param_updated['pose'][:3] = hand['pose'][:3]
+            mano_param_updated['trans'] = trans_new
+
+            seq_dict_out[f].append({'pose': mano_param_updated['pose'], 'shape': mano_param_updated['shape'],
+                                    'trans': mano_param_updated['trans'], 'hand_type': 'right' if h == 0 else 'left'})
+
+    seq_dict = seq_dict_out
+
+    # # save to a file for later
+    # with open('sequences/transformed/raw_sequence' + str(seq) + '.pkl', 'wb') as f:
+    #     pickle.dump(seq_dict, f)
 
 
 # returns two hands for a given frame in the recorded (interpolated) sequence
