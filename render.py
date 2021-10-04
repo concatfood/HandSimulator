@@ -893,7 +893,6 @@ def render():
                 hands = load_hands()
                 frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
                 num_frames_sequence = init_mano('sequences/final/' + sequence + '.pkl')
-                # background = load_random_chessboard()
                 background = load_random_background()
                 loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (s, sequence),
                      (aa, angle_augmentation), (ap, angle_position))
