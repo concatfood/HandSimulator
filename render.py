@@ -16,6 +16,7 @@ from PIL import Image
 from PIL import ImageOps
 import random
 from random import randrange
+from scipy.spatial.transform import Rotation as R
 from settings import *
 import time
 import torch
@@ -82,6 +83,85 @@ class Scene:
     program_id = None
     shadow_map_id = None
     view_matrix_id = None
+
+
+# adds cylindrical forearms for comparison with EventHands
+def add_forearms(vertices, normals, uvs, joints, radius, num_vecs_circle, length):
+    root = joints[0, :]
+    mcp_index = joints[5, :]
+    mcp_middle = joints[9, :]
+    vec_supp1 = mcp_middle - root
+    vec_supp1 = vec_supp1 / np.linalg.norm(vec_supp1)
+    vec_supp2 = mcp_index - root
+    vec_supp2 = vec_supp2 / np.linalg.norm(vec_supp2)
+    vec_first_rel = np.cross(vec_supp1, vec_supp2) * radius
+    root_opposite = root - length * vec_supp1
+
+    angle = 2 * math.pi / num_vecs_circle
+
+    verts_additional = []
+    normals_additional = []
+
+    for v in range(num_vecs_circle):
+        angle_1 = angle * v
+        angle_2 = angle * (v + 1)
+
+        rotvec_1 = angle_1 * vec_supp1
+        rotvec_2 = angle_2 * vec_supp1
+        rot_1 = R.from_rotvec(rotvec_1)
+        rot_2 = R.from_rotvec(rotvec_2)
+
+        vec_rotated_1_rel = rot_1.apply(vec_first_rel)
+        vec_rotated_2_rel = rot_2.apply(vec_first_rel)
+
+        vec_rotated_1 = root + vec_rotated_1_rel
+        vec_rotated_2 = root + vec_rotated_2_rel
+
+        vec_rotated_opposite_1 = vec_rotated_1 - length * vec_supp1
+        vec_rotated_opposite_2 = vec_rotated_2 - length * vec_supp1
+
+        verts_additional.append(root.reshape(1, 3))
+        verts_additional.append(vec_rotated_1.reshape(1, 3))
+        verts_additional.append(vec_rotated_2.reshape(1, 3))
+
+        normals_additional.append(vec_supp1.reshape(1, 3))
+        normals_additional.append(vec_supp1.reshape(1, 3))
+        normals_additional.append(vec_supp1.reshape(1, 3))
+
+        verts_additional.append(vec_rotated_2.reshape(1, 3))
+        verts_additional.append(vec_rotated_1.reshape(1, 3))
+        verts_additional.append(vec_rotated_opposite_2.reshape(1, 3))
+
+        normals_additional.append(vec_rotated_2_rel.reshape(1, 3))
+        normals_additional.append(vec_rotated_1_rel.reshape(1, 3))
+        normals_additional.append(vec_rotated_2_rel.reshape(1, 3))
+
+        verts_additional.append(vec_rotated_1.reshape(1, 3))
+        verts_additional.append(vec_rotated_opposite_1.reshape(1, 3))
+        verts_additional.append(vec_rotated_opposite_2.reshape(1, 3))
+
+        normals_additional.append(vec_rotated_2_rel.reshape(1, 3))
+        normals_additional.append(vec_rotated_1_rel.reshape(1, 3))
+        normals_additional.append(vec_rotated_2_rel.reshape(1, 3))
+
+        verts_additional.append(root_opposite.reshape(1, 3))
+        verts_additional.append(vec_rotated_opposite_2.reshape(1, 3))
+        verts_additional.append(vec_rotated_opposite_1.reshape(1, 3))
+
+        normals_additional.append(-vec_supp1.reshape(1, 3))
+        normals_additional.append(-vec_supp1.reshape(1, 3))
+        normals_additional.append(-vec_supp1.reshape(1, 3))
+
+    verts_additional = np.concatenate(verts_additional, 0)
+    vertices = np.concatenate((vertices, verts_additional), 0)
+
+    uvs_additional = 0.5 * np.ones((num_vecs_circle * 12, 2))
+    uvs = np.concatenate((uvs, uvs_additional), 0)
+
+    normals_additional = np.concatenate(normals_additional, 0)
+    normals = np.concatenate((normals, normals_additional), 0)
+
+    return vertices, normals, uvs
 
 
 # buffers background data for OpenGL
@@ -616,15 +696,16 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
         # mat_cam = np.array([[focal, 0.0, -res[0] / 2.0],
         #                     [0.0, -focal, -res[1] / 2.0],
         #                     [0.0, 0.0, -1.0]])
-        #
-        # vertices_right = mano_hands[0][0]
-        # vertices_left = mano_hands[1][0]
-        # joints_right = mano_hands[0][2]
-        # joints_left = mano_hands[1][2]
-        # joints_right = np.concatenate((joints_right, vertices_right[[745, 317, 444, 556, 673]]))
-        # joints_left = np.concatenate((joints_left, vertices_left[[745, 317, 445, 556, 673]]))
-        # joints_right = joints_right[[0, 13, 14, 15, 16, 1, 2, 3, 17, 4, 5, 6, 18, 10, 11, 12, 19, 7, 8, 9, 20]]
-        # joints_left = joints_left[[0, 13, 14, 15, 16, 1, 2, 3, 17, 4, 5, 6, 18, 10, 11, 12, 19, 7, 8, 9, 20]]
+
+        vertices_right = mano_hands[0][0]
+        vertices_left = mano_hands[1][0]
+        joints_right = mano_hands[0][2]
+        joints_left = mano_hands[1][2]
+        joints_right = np.concatenate((joints_right, vertices_right[[745, 317, 444, 556, 673]]))
+        joints_left = np.concatenate((joints_left, vertices_left[[745, 317, 445, 556, 673]]))
+        joints_right = joints_right[[0, 13, 14, 15, 16, 1, 2, 3, 17, 4, 5, 6, 18, 10, 11, 12, 19, 7, 8, 9, 20]]
+        joints_left = joints_left[[0, 13, 14, 15, 16, 1, 2, 3, 17, 4, 5, 6, 18, 10, 11, 12, 19, 7, 8, 9, 20]]
+
         # joints_3d = np.concatenate((joints_right, joints_left))
         # joints_2d_intrinsic = np.dot(joints_3d, mat_cam.transpose())
         # joints_2d = joints_2d_intrinsic[..., 0:2] / joints_2d_intrinsic[..., [2]]
@@ -642,6 +723,15 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
 
             hand.compute_vertices()
             hand.compute_normals()
+
+            # radius = 0.1
+            # num_vecs_circle = 36
+            # length = 10.0
+            # joints = joints_right if i == 0 else joints_left
+            #
+            # hand.vertices, hand.normals, hands_uvs = add_forearms(hand.vertices, hand.normals, hand.uvs, joints, radius,
+            #                                                       num_vecs_circle, length)
+
             buffer_data_hand(hand)
 
             glBindFramebuffer(GL_FRAMEBUFFER, frame_buffers[0])
@@ -901,7 +991,7 @@ def render():
     glfw.terminate()    # usually part of delete_opengl
 
     # # for testing
-    # name_sequence = '6'
+    # name_sequence = '5'
     #
     # init_opengl()
     # init_scene()
