@@ -971,36 +971,36 @@ def render():
     if window is None:
         return
 
-    for s, sequence in enumerate(sequences):
-        for aa, angle_augmentation in enumerate(angles_augmentation):
-            for ap, angle_position in enumerate(angles_position):
-                # draw from middle view only once (assume angles_position[0] == None)
-                if aa > 0 and ap == 0:
-                    continue
-
-                init_opengl()
-                init_scene()
-                hands = load_hands()
-                frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-                num_frames_sequence = init_mano('sequences/final/' + sequence + '.pkl')
-                background = load_random_background()
-                loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (s, sequence),
-                     (aa, angle_augmentation), (ap, angle_position))
-                delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
-
-    glfw.terminate()    # usually part of delete_opengl
-
-    # # for testing
-    # name_sequence = '5'
+    # for s, sequence in enumerate(sequences):
+    #     for aa, angle_augmentation in enumerate(angles_augmentation):
+    #         for ap, angle_position in enumerate(angles_position):
+    #             # draw from middle view only once (assume angles_position[0] == None)
+    #             if aa > 0 and ap == 0:
+    #                 continue
     #
-    # init_opengl()
-    # init_scene()
-    # hands = load_hands()
-    # frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-    # num_frames_sequence = init_mano('sequences/output/raw_sequence' + name_sequence + '_0_0.pkl')
-    # background = load_random_chessboard()
-    # loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence,
-    #      (int(name_sequence), sequences[int(name_sequence)]), (0, angles_augmentation[0]), (0, angles_position[0]))
-    # delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
+    #             init_opengl()
+    #             init_scene()
+    #             hands = load_hands()
+    #             frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
+    #             num_frames_sequence = init_mano('sequences/final/' + sequence + '.pkl')
+    #             background = load_random_background()
+    #             loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (s, sequence),
+    #                  (aa, angle_augmentation), (ap, angle_position))
+    #             delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
     #
     # glfw.terminate()    # usually part of delete_opengl
+
+    # for testing
+    name_sequence = '5'
+
+    init_opengl()
+    init_scene()
+    hands = load_hands()
+    frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
+    num_frames_sequence = init_mano('sequences/output/raw_sequence' + name_sequence + '_0_0.pkl')
+    background = load_random_chessboard()
+    loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence,
+         (int(name_sequence), sequences[int(name_sequence)]), (0, angles_augmentation[0]), (0, angles_position[0]))
+    delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
+
+    glfw.terminate()    # usually part of delete_opengl
