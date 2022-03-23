@@ -85,8 +85,94 @@ class Scene:
     view_matrix_id = None
 
 
-# adds cylindrical forearms for comparison with EventHands
-def add_forearms(vertices, normals, uvs, joints, radius, num_vecs_circle, length):
+# adds cylindrical forearms with fixed elbow locations for comparison with EventHands
+def add_forearms_fixed(vertices, normals, uvs, joints, radius, num_vecs_circle, side):
+    root = joints[0, :]
+    mcp_middle = joints[9, :]
+    root_opposite = np.array([0.0, 0.0, -0.5])
+
+    if side == 'right':
+        root_opposite = np.array([-0.3, 0.0, -0.5])
+    elif side == 'left':
+        root_opposite = np.array([0.3, 0.0, -0.5])
+
+    dir_forearm = root - root_opposite
+    dir_forearm = dir_forearm / np.linalg.norm(dir_forearm)
+    vec_supp1 = mcp_middle - root
+    vec_supp1 = vec_supp1 / np.linalg.norm(vec_supp1)
+    vec_supp2 = np.cross(vec_supp1, dir_forearm)
+    vec_supp2 = vec_supp2 / np.linalg.norm(vec_supp2)
+    vec_first_rel = np.cross(dir_forearm, vec_supp2) * radius
+
+    angle = 2 * math.pi / num_vecs_circle
+
+    verts_additional = []
+    normals_additional = []
+
+    for v in range(num_vecs_circle):
+        angle_1 = angle * v
+        angle_2 = angle * (v + 1)
+
+        rotvec_1 = angle_1 * dir_forearm
+        rotvec_2 = angle_2 * dir_forearm
+        rot_1 = R.from_rotvec(rotvec_1)
+        rot_2 = R.from_rotvec(rotvec_2)
+
+        vec_rotated_1_rel = rot_1.apply(vec_first_rel)
+        vec_rotated_2_rel = rot_2.apply(vec_first_rel)
+
+        vec_rotated_1 = root + vec_rotated_1_rel
+        vec_rotated_2 = root + vec_rotated_2_rel
+
+        vec_rotated_opposite_1 = vec_rotated_1 - 0.3 * dir_forearm
+        vec_rotated_opposite_2 = vec_rotated_2 - 0.3 * dir_forearm
+
+        verts_additional.append(root.reshape(1, 3))
+        verts_additional.append(vec_rotated_1.reshape(1, 3))
+        verts_additional.append(vec_rotated_2.reshape(1, 3))
+
+        normals_additional.append(dir_forearm.reshape(1, 3))
+        normals_additional.append(dir_forearm.reshape(1, 3))
+        normals_additional.append(dir_forearm.reshape(1, 3))
+
+        verts_additional.append(vec_rotated_2.reshape(1, 3))
+        verts_additional.append(vec_rotated_1.reshape(1, 3))
+        verts_additional.append(vec_rotated_opposite_2.reshape(1, 3))
+
+        normals_additional.append(vec_rotated_2_rel.reshape(1, 3))
+        normals_additional.append(vec_rotated_1_rel.reshape(1, 3))
+        normals_additional.append(vec_rotated_2_rel.reshape(1, 3))
+
+        verts_additional.append(vec_rotated_1.reshape(1, 3))
+        verts_additional.append(vec_rotated_opposite_1.reshape(1, 3))
+        verts_additional.append(vec_rotated_opposite_2.reshape(1, 3))
+
+        normals_additional.append(vec_rotated_2_rel.reshape(1, 3))
+        normals_additional.append(vec_rotated_1_rel.reshape(1, 3))
+        normals_additional.append(vec_rotated_2_rel.reshape(1, 3))
+
+        verts_additional.append(root_opposite.reshape(1, 3))
+        verts_additional.append(vec_rotated_opposite_2.reshape(1, 3))
+        verts_additional.append(vec_rotated_opposite_1.reshape(1, 3))
+
+        normals_additional.append(-dir_forearm.reshape(1, 3))
+        normals_additional.append(-dir_forearm.reshape(1, 3))
+        normals_additional.append(-dir_forearm.reshape(1, 3))
+
+    verts_additional = np.concatenate(verts_additional, 0)
+    vertices = np.concatenate((vertices, verts_additional), 0)
+
+    uvs_additional = 0.5 * np.ones((num_vecs_circle * 12, 2))
+    uvs = np.concatenate((uvs, uvs_additional), 0)
+
+    normals_additional = np.concatenate(normals_additional, 0)
+    normals = np.concatenate((normals, normals_additional), 0)
+
+    return vertices, normals, uvs
+
+
+# adds cylindrical forearms parallel to the middle MCP bone for comparison with EventHands
+def add_forearms_parallel(vertices, normals, uvs, joints, radius, num_vecs_circle, length):
     root = joints[0, :]
     mcp_index = joints[5, :]
     mcp_middle = joints[9, :]
@@ -94,7 +180,8 @@ def add_forearms(vertices, normals, uvs, joints, radius, num_vecs_circle, length
     vec_supp1 = vec_supp1 / np.linalg.norm(vec_supp1)
     vec_supp2 = mcp_index - root
     vec_supp2 = vec_supp2 / np.linalg.norm(vec_supp2)
-    vec_first_rel = np.cross(vec_supp1, vec_supp2) * radius
+    vec_first_rel = np.cross(vec_supp1, vec_supp2)
+    vec_first_rel = vec_first_rel / np.linalg.norm(vec_first_rel) * radius
     root_opposite = root - length * vec_supp1
 
     angle = 2 * math.pi / num_vecs_circle
@@ -250,7 +337,7 @@ def create_window():
     if OUTPUT_MODE == 'disk':
         glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
 
-    glfw.window_hint(glfw.DOUBLEBUFFER, GL_TRUE if LIMIT_FPS else GL_FALSE)
+    glfw.window_hint(glfw.VISIBLE, glfw.FALSE)  # for true headless rendering
 
     window = glfw.create_window(res[0], res[1], 'Hand simulator', None, None)
 
@@ -724,13 +811,23 @@ def loop(window, frame_buffers, background, hands, depth_texture, num_frames_seq
             hand.compute_vertices()
             hand.compute_normals()
 
-            # radius = 0.1
-            # num_vecs_circle = 36
+            radius = 0.0275
+            num_vecs_circle = 36
+            joints = joints_right if i == 0 else joints_left
+
             # length = 10.0
-            # joints = joints_right if i == 0 else joints_left
-            #
-            # hand.vertices, hand.normals, hands_uvs = add_forearms(hand.vertices, hand.normals, hand.uvs, joints, radius,
-            #                                                       num_vecs_circle, length)
+            # hand.vertices, hand.normals, hands_uvs = add_forearms_parallel(hand.vertices, hand.normals, hand.uvs,
+            #                                                                joints, radius, num_vecs_circle, length)
+
+            side = ''
+
+            if i == 0:
+                side = 'right'
+            elif i == 1:
+                side = 'left'
+
+            hand.vertices, hand.normals, hands_uvs = add_forearms_fixed(hand.vertices, hand.normals, hand.uvs, joints,
+                                                                        radius, num_vecs_circle, side)
 
             buffer_data_hand(hand)
 
@@ -971,36 +1068,36 @@ def render():
     if window is None:
         return
 
-    # for s, sequence in enumerate(sequences):
-    #     for aa, angle_augmentation in enumerate(angles_augmentation):
-    #         for ap, angle_position in enumerate(angles_position):
-    #             # draw from middle view only once (assume angles_position[0] == None)
-    #             if aa > 0 and ap == 0:
-    #                 continue
-    #
-    #             init_opengl()
-    #             init_scene()
-    #             hands = load_hands()
-    #             frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-    #             num_frames_sequence = init_mano('sequences/final/' + sequence + '.pkl')
-    #             background = load_random_background()
-    #             loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (s, sequence),
-    #                  (aa, angle_augmentation), (ap, angle_position))
-    #             delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
-    #
-    # glfw.terminate()    # usually part of delete_opengl
+    for s, sequence in enumerate(sequences):
+        for aa, angle_augmentation in enumerate(angles_augmentation):
+            for ap, angle_position in enumerate(angles_position):
+                # draw from middle view only once (assume angles_position[0] == None)
+                if aa > 0 and ap == 0:
+                    continue
 
-    # for testing
-    name_sequence = '5'
-
-    init_opengl()
-    init_scene()
-    hands = load_hands()
-    frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
-    num_frames_sequence = init_mano('sequences/output/raw_sequence' + name_sequence + '_0_0.pkl')
-    background = load_random_chessboard()
-    loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence,
-         (int(name_sequence), sequences[int(name_sequence)]), (0, angles_augmentation[0]), (0, angles_position[0]))
-    delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
+                init_opengl()
+                init_scene()
+                hands = load_hands()
+                frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
+                num_frames_sequence = init_mano('sequences/final/' + sequence + '.pkl')
+                background = load_random_background()
+                loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence, (s, sequence),
+                     (aa, angle_augmentation), (ap, angle_position))
+                delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
 
     glfw.terminate()    # usually part of delete_opengl
+
+    # # for testing
+    # name_sequence = '5'
+    #
+    # init_opengl()
+    # init_scene()
+    # hands = load_hands()
+    # frame_buffers, render_buffers, depth_texture = setup_frame_buffers()
+    # num_frames_sequence = init_mano('sequences/output/raw_sequence' + name_sequence + '_0_0.pkl')
+    # background = load_random_chessboard()
+    # loop(window, frame_buffers, background, hands, depth_texture, num_frames_sequence,
+    #      (int(name_sequence), sequences[int(name_sequence)]), (0, angles_augmentation[0]), (0, angles_position[0]))
+    # delete_opengl(frame_buffers, render_buffers, depth_texture, background, hands)
+    #
+    # glfw.terminate()    # usually part of delete_opengl
